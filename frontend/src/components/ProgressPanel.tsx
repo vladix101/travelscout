@@ -5,7 +5,9 @@ const ACCOMMODATION_STAGES = new Set(["accommodation", "eligibility", "totals", 
 function currentStep(job: Job): 1 | 2 | 3 {
   if (job.status === "awaiting_selection") return 1;
   if (["done", "partial"].includes(job.status) && (job.result?.packages.length ?? 0) > 0) return 3;
-  return job.progress.some((e) => ACCOMMODATION_STAGES.has(e.stage)) ? 2 : 1;
+  // Flights were already chosen (phase 2 of the search) or accommodation work has started.
+  if ((job.result?.flight_choices.length ?? 0) > 0) return 2;
+  return job.progress.some((e) => ACCOMMODATION_STAGES.has(e.stage) || e.stage === "select") ? 2 : 1;
 }
 
 function headline(job: Job, step: number): string {

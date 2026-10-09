@@ -274,7 +274,7 @@ export default function App() {
             <section className="stack" style={{ gap: 18 }} aria-label="Rezultati">
               {startError ? <div className="notice bad">{startError}</div> : null}
               {job ? <ProgressPanel job={job} onCancel={() => void api.cancel(job.id).catch(() => undefined)} /> : null}
-              {awaiting && job?.result && meta ? (
+              {awaiting && !selecting && job?.result && meta ? (
                 <FlightChoices
                   key={job.id}
                   result={job.result}
@@ -292,7 +292,18 @@ export default function App() {
                   }}
                 />
               ) : null}
-              {job?.result && !awaiting ? (
+              {running || (selecting && awaiting) ? (
+                <section className="card panel stack" aria-busy="true">
+                  <p className="small muted" style={{ margin: 0 }}>
+                    {job?.result?.flight_choices.length
+                      ? "Proveravam sobe, ocene, kupatila i cene za tačne noći vaših letova. Obično traje do minut."
+                      : "Tražim sve kombinacije datuma u vašem periodu."}
+                  </p>
+                  <div className="skeleton" />
+                  <div className="skeleton" />
+                </section>
+              ) : null}
+              {job?.result && !awaiting && !running ? (
                 <Results
                   key={job.id}
                   result={job.result}
