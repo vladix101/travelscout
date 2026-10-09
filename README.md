@@ -22,7 +22,8 @@ The UI is in Serbian (Latin script) and shows prices in EUR by default (RSD opti
 - Strict accommodation rules. Anything that cannot be proven goes to a separate **Needs verification** list.
 - Transparent cost breakdown, Decimal money, timestamped FX rates (ECB + NBS).
 - Live agent progress (stages and tool calls, no private reasoning), cancellation, partial results.
-- Filters, side-by-side comparison of up to 3 trips, favorites, saved searches.
+- Filters, side-by-side comparison of up to 3 trips, saved filter sets.
+- **My trips**: save flight + accommodation + itinerary together and e-mail the trip to yourself (Gmail SMTP with an app password; HTML body plus Markdown/JSON attachments).
 - On-demand itineraries with map links, OSM opening-hours tags and transfer route links.
 - Export of a trip and its itinerary as Markdown or JSON.
 - Integration-status panel and a **live / cached / manual / demo / unverified** badge with timestamp on every result.
@@ -38,6 +39,7 @@ The UI is in Serbian (Latin script) and shows prices in EUR by default (RSD opti
 | OpenStreetMap (Nominatim + Overpass) | On by default | Attractions, coordinates, `opening_hours`/`fee` tags. Community data: verify before you go. |
 | ECB (Frankfurter) + NBS (kurs.resenje.org) | On by default | FX rates. Fallback rates are clearly flagged. |
 | Manual import | Always available | Paste or type offers you found yourself; labelled "Ručni unos". |
+| Gmail SMTP | Optional `GMAIL_ADDRESS` + `GOOGLE_APP_PASSWORD` | E-mails a saved trip. Needs 2-step verification and a Google app password. |
 
 **Only an OpenAI key:** all agents, the full demo flow, manual import, OSM itineraries and provider links.<br>
 **Additional opt-in:** live Wizz Air fares and live Booking.com rooms (no extra credentials; Chromium for Booking).<br>
@@ -131,14 +133,14 @@ macOS/Linux: same steps with `.venv/bin/python`.
 
 1. Leave **Demo podaci** selected and click **Pronađi letove**, then **Traži smeštaj za izabrane letove**. The full workflow runs on fictional data.
 2. Type a request such as *"Malta početkom novembra, 4 do 5 noći, nas dvoje"*. It is applied automatically when you search (or click **Protumači** to review it first).
-3. Open **Plan putovanja** on a card, tick **Uporedi** on two or three cards, or export Markdown/JSON.
+3. Click **Sačuvaj putovanje** on a card (the itinerary is generated and stored with it), open **Moja putovanja**, and send it to your e-mail or download Markdown/JSON.
 4. For real data, set `WIZZ_LIVE_ENABLED=true` and `BOOKING_SCRAPER_ENABLED=true`, restart the backend, and choose **Stvarni podaci**. Pick flights in step 1; accommodation for three Malta date options took about 30 s in testing (Chromium runs off-screen).
 
 ## Tests and checks
 
 ```powershell
 cd backend
-.\.venv\Scripts\python -m pytest -q            # 118 tests, fixtures only, no network
+.\.venv\Scripts\python -m pytest -q            # 122 tests, fixtures only, no network (SMTP is mocked)
 .\.venv\Scripts\ruff check app tests
 .\.venv\Scripts\mypy app
 .\.venv\Scripts\python -m pytest -m live -q    # optional: real OpenAI call (uses your key, costs a little)

@@ -11,7 +11,7 @@ type Props = {
 };
 
 function defaultPick(choices: FlightOption[], max: number): string[] {
-  // Cheapest option per destination first, up to `max`.
+  // Cheapest option per destination first, then the next cheapest (other dates), up to `max`.
   const sorted = [...choices].sort((a, b) => Number(a.total_fare.amount) - Number(b.total_fare.amount));
   const picked: string[] = [];
   const seen = new Set<string>();
@@ -22,7 +22,6 @@ function defaultPick(choices: FlightOption[], max: number): string[] {
       picked.push(o.id);
     }
   }
-  // Fill remaining slots with the next cheapest options (e.g. other date combinations for one destination).
   for (const o of sorted) {
     if (picked.length >= max) break;
     if (!picked.includes(o.id)) picked.push(o.id);
@@ -34,24 +33,24 @@ export function FlightChoices({ result, maxSelect, busy, onConfirm }: Props) {
   const choices = result.flight_choices;
   const [selected, setSelected] = useState<string[]>(() => defaultPick(choices, Math.min(3, maxSelect)));
   const [sort, setSort] = useState<"date" | "price">("date");
-  const people = result.constraints.party.adults + result.constraints.party.children;
+  const people = Math.max(result.constraints.party.adults + result.constraints.party.children, 1);
+  const cheapest = Math.min(...choices.map((o) => Number(o.total_fare.amount)));
 
   const groups = useMemo(() => {
     const map = new Map<string, FlightOption[]>();
-    for (const o of choices) {
-      const k = o.outbound.destination;
-      map.set(k, [...(map.get(k) ?? []), o]);
-    }
-    const out = Array.from(map.entries()).map(([dest, opts]) => {
-      const list = [...opts].sort((a, b) =>
-        sort === "price"
-          ? Number(a.total_fare.amount) - Number(b.total_fare.amount)
-          : a.outbound.departure_local.localeCompare(b.outbound.departure_local) || a.inbound.departure_local.localeCompare(b.inbound.departure_local),
-      );
-      const cheapest = Math.min(...opts.map((o) => Number(o.total_fare.amount)));
-      return { dest, list, cheapest };
-    });
-    return out.sort((a, b) => a.cheapest - b.cheapest);
+    for (const o of choices) map.set(o.outbound.destination, [...(map.get(o.outbound.destination) ?? []), o]);
+    return Array.from(map.entries())
+      .map(([dest, opts]) => ({
+        dest,
+        min: Math.min(...opts.map((o) => Number(o.total_fare.amount))),
+        list: [...opts].sort((a, b) =>
+          sort === "price"
+            ? Number(a.total_fare.amount) - Number(b.total_fare.amount)
+            : a.outbound.departure_local.localeCompare(b.outbound.departure_local) ||
+              a.inbound.departure_local.localeCompare(b.inbound.departure_local),
+        ),
+      }))
+      .sort((a, b) => a.min - b.min);
   }, [choices, sort]);
 
   const toggle = (id: string) =>
@@ -60,22 +59,30 @@ export function FlightChoices({ result, maxSelect, busy, onConfirm }: Props) {
   if (choices.length === 0) {
     return (
       <div className="card empty">
-        <h2>Nema letova za zadate uslove</h2>
-        <p className="muted">Proširite period polaska ili raspon noći.</p>
+        <h2>Nema letova za ove uslove</h2>
+        <p className="muted">Proširite period polaska ili raspon noći, ili dodajte još polaznih aerodroma.</p>
+        {result.suggestions.length ? (
+          <ul className="small">
+            {result.suggestions.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     );
   }
 
   return (
     <section className="card panel stack" aria-label="Izbor letova">
-      <div className="row spread">
+      <div className="row spread" style={{ alignItems: "flex-end" }}>
         <div>
-          <h2>Korak 1: izaberite letove</h2>
-          <p className="small muted" style={{ margin: 0 }}>
-            Pronađeno {choices.length} kombinacija letova. Izaberite do {maxSelect}; smeštaj tražimo tačno za datume izabranih letova.
+          <div className="eyebrow">Korak 1</div>
+          <h2>Izaberite letove</h2>
+          <p className="small muted" style={{ margin: "4px 0 0" }}>
+            {choices.length} {choices.length === 1 ? "kombinacija" : "kombinacija"} datuma. Smeštaj tražimo tačno za noći izabranih letova.
           </p>
         </div>
-        <div className="segmented" role="group" aria-label="Sortiranje letova">
+        <div className="segmented" role="group" aria-label="Sortiranje">
           <button type="button" aria-pressed={sort === "date"} onClick={() => setSort("date")}>
             Po datumu
           </button>
@@ -84,94 +91,71 @@ export function FlightChoices({ result, maxSelect, busy, onConfirm }: Props) {
           </button>
         </div>
       </div>
-      {result.mode === "demo" ? <div className="notice demo small">DEMO letovi – nisu stvarne ponude.</div> : null}
-      {result.agent_notes.map((n) => (
-        <div key={n} className="small muted">
-          {n}
-        </div>
-      ))}
+      {result.mode === "demo" ? <div className="notice demo small">Demo letovi – nisu stvarne ponude.</div> : null}
 
       {groups.map(({ dest, list }) => (
-        <div key={dest} className="stack" style={{ gap: 6 }}>
+        <div key={dest} className="choice-group">
           <h3>
-            {result.destination_cities[dest] ?? dest} <span className="muted" style={{ fontWeight: 500 }}>({dest})</span>
+            {result.destination_cities[dest] ?? dest} <span className="muted" style={{ fontSize: "0.9rem" }}>{dest}</span>
           </h3>
-          <div className="compare">
-            <table>
-              <thead>
-                <tr>
-                  <th />
-                  <th>Polazak</th>
-                  <th>Povratak</th>
-                  <th>Trajanje</th>
-                  <th className="num">Cena letova</th>
-                  <th>Izvor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((o) => {
-                  const nights = nightsBetween(o.outbound.departure_local, o.inbound.departure_local);
-                  const checked = selected.includes(o.id);
-                  return (
-                    <tr key={o.id} style={{ background: checked ? "var(--primary-soft)" : undefined, cursor: "pointer" }} onClick={() => toggle(o.id)}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          aria-label={`Izaberi let ${localDay(o.outbound.departure_local)}`}
-                          checked={checked}
-                          disabled={!checked && selected.length >= maxSelect}
-                          onChange={() => toggle(o.id)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </td>
-                      <td>
-                        <strong>{localDay(o.outbound.departure_local)}</strong> {localTime(o.outbound.departure_local)}
-                        <div className="tiny muted">
-                          {o.outbound.origin}→{o.outbound.destination}
-                          {o.outbound.arrival_local ? ` · dolazak ${localTime(o.outbound.arrival_local)}${o.outbound.arrival_is_estimate ? " (procena)" : ""}` : ""}
-                        </div>
-                      </td>
-                      <td>
-                        <strong>{localDay(o.inbound.departure_local)}</strong> {localTime(o.inbound.departure_local)}
-                        <div className="tiny muted">
-                          {o.inbound.origin}→{o.inbound.destination}
-                        </div>
-                      </td>
-                      <td>
-                        {nights + 1} dana / {nights} noći
-                      </td>
-                      <td className="num">
-                        <strong>{money(o.total_fare.amount, "EUR")}</strong>
-                        <div className="tiny muted">
-                          {money(Number(o.total_fare.amount) / Math.max(people, 1), "EUR")} po osobi
-                        </div>
-                      </td>
-                      <td>
-                        <OriginBadge origin={o.evidence.origin} at={o.evidence.retrieved_at} />
-                        {o.booking_url ? (
-                          <div className="tiny">
-                            <a href={o.booking_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                              Wizz Air ↗
-                            </a>
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {list.map((o) => {
+            const nights = nightsBetween(o.outbound.departure_local, o.inbound.departure_local);
+            const checked = selected.includes(o.id);
+            const isCheapest = Number(o.total_fare.amount) === cheapest;
+            return (
+              <div
+                key={o.id}
+                className={`choice ${checked ? "selected" : ""}`}
+                onClick={() => toggle(o.id)}
+                role="checkbox"
+                aria-checked={checked}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === " " || e.key === "Enter") {
+                    e.preventDefault();
+                    toggle(o.id);
+                  }
+                }}
+              >
+                <input type="checkbox" tabIndex={-1} aria-hidden checked={checked} disabled={!checked && selected.length >= maxSelect} readOnly />
+                <div>
+                  <div className="leg-date">Polazak · {localDay(o.outbound.departure_local)}</div>
+                  <div className="leg-time">
+                    {localTime(o.outbound.departure_local)} <span className="tiny muted">{o.outbound.origin}→{o.outbound.destination}</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="leg-date">Povratak · {localDay(o.inbound.departure_local)}</div>
+                  <div className="leg-time">
+                    {localTime(o.inbound.departure_local)} <span className="tiny muted">{o.inbound.origin}→{o.inbound.destination}</span>
+                  </div>
+                </div>
+                <div className="dur">
+                  {nights} {nights === 1 ? "noć" : "noći"}
+                  <div className="tiny muted">{nights + 1} dana</div>
+                </div>
+                <div className="price">
+                  <b className="tnum">{money(o.total_fare.amount, "€")}</b>
+                  <div className="tiny muted">
+                    {money(Number(o.total_fare.amount) / people, "€")} po osobi{isCheapest ? " · najjeftinije" : ""}
+                  </div>
+                  <div style={{ marginTop: 2 }}>
+                    <OriginBadge origin={o.evidence.origin} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ))}
 
-      <div className="card compare-tray">
-        <strong>
-          Izabrano: {selected.length}/{maxSelect}
-        </strong>
-        <span className="tiny muted">Cene letova su najniže cene po sedištu; prtljag i dodaci se računaju u sledećem koraku.</span>
+      <div className="sticky-bar">
+        <span>
+          <strong>{selected.length}</strong> od {maxSelect} izabrano
+        </span>
+        <span className="tiny muted">Cene su najniže cene po sedištu; prtljag i takse dolaze u sledećem koraku.</span>
         <button className="btn primary" style={{ marginLeft: "auto" }} disabled={busy || selected.length === 0} onClick={() => onConfirm(selected)}>
-          Traži smeštaj za izabrane letove
+          {busy ? "Šaljem…" : "Traži smeštaj za izabrane"}
         </button>
       </div>
     </section>

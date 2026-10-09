@@ -1,39 +1,5 @@
-import type { Favorite, SavedSearch, TripPackage } from "../types";
+import type { SavedSearch } from "../types";
 import { localDate, timestamp } from "../format";
-import { api } from "../api";
-import { TripCard } from "./TripCard";
-
-export function FavoritesView({ items, onRemove, onItinerary }: {
-  items: Favorite[];
-  onRemove: (id: string) => void;
-  onItinerary: (jobId: string, pkg: TripPackage) => void;
-}) {
-  if (items.length === 0) {
-    return (
-      <div className="card empty">
-        <h2>Nema omiljenih putovanja</h2>
-        <p className="muted">Kliknite „☆ Omiljeno“ na kartici putovanja da biste ga sačuvali ovde.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="trip-list">
-      <p className="small muted">Omiljena putovanja su snimci u trenutku čuvanja – cene i dostupnost proverite ponovo pre rezervacije.</p>
-      {items.map((f) => (
-        <div key={f.id} className="stack" style={{ gap: 4 }}>
-          <span className="tiny muted">Sačuvano {timestamp(f.created_at)}</span>
-          <TripCard
-            pkg={f.package}
-            onFavorite={() => onRemove(f.id)}
-            favoriteLabel="Ukloni iz omiljenih"
-            onItinerary={f.job_id ? () => onItinerary(f.job_id as string, f.package) : undefined}
-            exportLinks={f.job_id ? { md: api.exportUrl(f.job_id, f.package.id, "md"), json: api.exportUrl(f.job_id, f.package.id, "json") } : null}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function SavedSearchesView({ items, onLoad, onRun, onRemove }: {
   items: SavedSearch[];

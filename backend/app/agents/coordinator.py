@@ -100,6 +100,31 @@ FIELD_LABELS = {
 }
 
 
+VALUE_LABELS = {
+    "flexible": "fleksibilno",
+    "exact": "tačni datumi",
+    "per_person": "po osobi",
+    "group": "cela grupa",
+    "relaxed": "opušteno",
+    "moderate": "umereno",
+    "intense": "intenzivno",
+}
+
+
+def _fmt_value(key: str, value: Any) -> str:
+    """Human-readable Serbian rendering of an interpreted value for the UI."""
+    if isinstance(value, bool):
+        return "da" if value else "ne"
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value) if value else "—"
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value).strftime("%d.%m.%Y.")
+        except ValueError:
+            return VALUE_LABELS.get(value, value)
+    return str(value)
+
+
 def _draft_groups(d: dict[str, Any]) -> list[list[tuple[tuple[str, ...], str, Any]]]:
     """Split proposed values into groups that must be applied (and validated) together."""
     groups: list[list[tuple[tuple[str, ...], str, Any]]] = []
@@ -182,7 +207,9 @@ def merge_draft(base: SearchConstraints, draft: CoordinatorDraft) -> Interpreted
             continue
         data = trial
         for key, value in changed:
-            notes.append(InterpretationNote(field=key, message=f"{FIELD_LABELS.get(key, key)}: {value} (iz teksta)"))
+            notes.append(
+                InterpretationNote(field=key, message=f"{FIELD_LABELS.get(key, key)}: {_fmt_value(key, value)}")
+            )
 
     for m in d.get("destination_mapping") or []:
         notes.append(InterpretationNote(field="destinations", message=f"Mapiranje: {m}"))

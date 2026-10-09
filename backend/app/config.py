@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "travelscout"
 
+    # --- E-mail (Gmail SMTP with an app password) ----------------------------------------
+    gmail_address: str = ""
+    google_app_password: SecretStr | None = None
+    mail_to: str = Field(default="", description="Default recipient; falls back to gmail_address.")
+
     # --- Live providers (opt-in; see docs/PROVIDERS.md) -----------------------------------
     wizz_live_enabled: bool = False
     booking_scraper_enabled: bool = False

@@ -1,76 +1,77 @@
 import type { Job } from "../types";
-import { timestamp } from "../format";
 
-const STAGES: [string, string][] = [
-  ["validate", "Provera"],
-  ["flights", "Letovi"],
-  ["shortlist", "Uži izbor"],
-  ["select", "Izbor letova"],
-  ["accommodation", "Smeštaj"],
-  ["eligibility", "Uslovi"],
-  ["totals", "Troškovi"],
-  ["rank", "Rangiranje"],
-];
+const ACCOMMODATION_STAGES = new Set(["accommodation", "eligibility", "totals", "rank"]);
 
-const STATUS_LABEL: Record<Job["status"], string> = {
-  queued: "U redu čekanja",
-  running: "U toku",
-  awaiting_selection: "Čeka vaš izbor letova",
-  done: "Završeno",
-  partial: "Delimični rezultati",
-  failed: "Greška",
-  cancelled: "Otkazano",
-};
+function currentStep(job: Job): 1 | 2 | 3 {
+  if (job.status === "awaiting_selection") return 1;
+  if (["done", "partial"].includes(job.status) && (job.result?.packages.length ?? 0) > 0) return 3;
+  return job.progress.some((e) => ACCOMMODATION_STAGES.has(e.stage)) ? 2 : 1;
+}
+
+function headline(job: Job, step: number): string {
+  if (job.status === "failed") return "Pretraga nije uspela";
+  if (job.status === "cancelled") return "Pretraga je otkazana";
+  if (job.status === "awaiting_selection") return "Letovi su pronađeni – izaberite datume";
+  if (job.status === "done") return "Gotovo";
+  if (job.status === "partial") return "Gotovo, uz delimične rezultate";
+  const last = [...job.progress].reverse().find((e) => e.status === "running");
+  return last?.message ?? (step === 1 ? "Tražim letove…" : "Tražim smeštaj…");
+}
+
+function clock(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("sr-Latn-RS", { hour: "2-digit", minute: "2-digit" });
+}
 
 export function ProgressPanel({ job, onCancel }: { job: Job; onCancel: () => void }) {
-  const seen = new Set(job.progress.map((e) => e.stage));
-  const finished = !["queued", "running", "awaiting_selection"].includes(job.status);
-  const waiting = job.status === "awaiting_selection";
-  const doneStages = new Set(job.progress.filter((e) => e.status === "done" || finished).map((e) => e.stage));
-  const idx = STAGES.reduce((acc, [s], i) => (seen.has(s) ? i + 1 : acc), 0);
-  const pct = finished ? 100 : Math.max(5, Math.round((idx / STAGES.length) * 100));
-  const events = [...job.progress].reverse().slice(0, 40);
-  const tone = waiting ? "warn" : job.status === "failed" ? "bad" : job.status === "partial" || job.status === "cancelled" ? "warn" : finished ? "ok" : "neutral";
-
+  const step = currentStep(job);
+  const running = ["queued", "running"].includes(job.status);
+  const steps: [number, string][] = [
+    [1, "Letovi"],
+    [2, "Smeštaj"],
+    [3, "Putovanje"],
+  ];
   return (
-    <section className="card panel stack" aria-live="polite" aria-busy={!finished}>
-      <div className="row spread">
-        <div className="row">
-          <h2>Napredak agenata</h2>
-          <span className={`badge ${tone}`}>{STATUS_LABEL[job.status]}</span>
-          {job.mode === "demo" ? <span className="badge demo">DEMO</span> : null}
-        </div>
-        {!finished ? (
-          <button className="btn small danger" onClick={onCancel}>
+    <section className="card panel" aria-live="polite" aria-busy={running} style={{ paddingTop: 14 }}>
+      <div className="stepper">
+        {steps.map(([n, label]) => (
+          <div key={n} className={`step ${n === step ? "active" : n < step ? "done" : ""}`}>
+            <span className="n">{n}</span>
+            {label}
+          </div>
+        ))}
+      </div>
+      <div className="status-line">
+        {running ? <span className="spinner" aria-hidden /> : null}
+        <span>{headline(job, step)}</span>
+        {job.mode === "demo" ? <span className="badge demo">Demo podaci</span> : null}
+        {running ? (
+          <button className="btn small ghost danger" style={{ marginLeft: "auto" }} onClick={onCancel}>
             Otkaži
           </button>
         ) : null}
       </div>
-      <div className="bar" aria-hidden>
-        <span style={{ width: `${pct}%` }} />
-      </div>
-      <div className="stages">
-        {STAGES.map(([s, label]) => (
-          <span key={s} className={`stage ${doneStages.has(s) ? "done" : seen.has(s) ? "active" : ""}`}>
-            {label}
-          </span>
-        ))}
-      </div>
-      {job.error ? <div className={`notice ${job.status === "failed" ? "bad" : "warn"} small`}>{job.error}</div> : null}
-      <details open={!finished && !waiting}>
-        <summary>Dnevnik koraka ({job.progress.length})</summary>
+      {job.error ? (
+        <div className={`notice ${job.status === "failed" ? "bad" : "warn"} small`} style={{ marginTop: 10 }}>
+          {job.error}
+        </div>
+      ) : null}
+      <details style={{ marginTop: 10 }}>
+        <summary className="muted">Šta su agenti radili ({job.progress.length})</summary>
         <ul className="progress-list">
-          {events.map((e, i) => (
-            <li key={i}>
-              <span className={`dot ${e.status}`} aria-hidden />
-              <span>
-                {e.agent ? <strong>{e.agent}: </strong> : null}
-                {e.message}
-                {e.tool ? <span className="badge neutral" style={{ marginLeft: 6 }}>alat: {e.tool}</span> : null}
-              </span>
-              <span className="tiny muted">{timestamp(e.at)}</span>
-            </li>
-          ))}
+          {[...job.progress]
+            .reverse()
+            .slice(0, 60)
+            .map((e, i) => (
+              <li key={i} className={e.status === "warning" ? "warning" : e.status === "error" ? "error" : undefined}>
+                <span className="t">{clock(e.at)}</span>
+                <span>
+                  {e.agent ? <strong>{e.agent}: </strong> : null}
+                  {e.message}
+                  {e.tool ? <span className="muted"> · alat {e.tool}</span> : null}
+                </span>
+              </li>
+            ))}
         </ul>
       </details>
     </section>

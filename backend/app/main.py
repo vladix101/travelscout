@@ -29,6 +29,7 @@ from app.providers.demo import DEMO_ROUTES
 from app.providers.manual import ManualAccommodationInput, ManualFlightInput
 from app.security import install_log_redaction, redact
 from app.services.export import package_to_json, package_to_markdown
+from app.services.mailer import MailError, mail_configured, send_trip_email
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 install_log_redaction()
@@ -166,6 +167,15 @@ async def integrations(request: Request) -> dict[str, Any]:
             "data": "live / cached / fallback",
         },
         {
+            "id": "email",
+            "name": "Slanje mejla (Gmail SMTP)",
+            "status": "active" if mail_configured(s) else "missing",
+            "detail": f"Pošiljalac: {s.gmail_address}"
+            if mail_configured(s)
+            else "Dodajte GMAIL_ADDRESS i GOOGLE_APP_PASSWORD u .env",
+            "data": "—",
+        },
+        {
             "id": "manual",
             "name": "Ručni uvoz",
             "status": "active",
@@ -269,15 +279,8 @@ async def _load_package(request: Request, job_id: str, package_id: str) -> tuple
 @app.post("/api/searches/{job_id}/packages/{package_id}/itinerary", response_model=Itinerary)
 async def itinerary(job_id: str, package_id: str, request: Request) -> Itinerary:
     job, pkg = await _load_package(request, job_id, package_id)
-    db = _db(request)
-    key = f"itinerary:{job_id}:{package_id}"
-    cached = await db.cache_get(key)
-    if cached:
-        return Itinerary.model_validate(cached[0])
-    constraints = SearchConstraints.model_validate(job["request"])
-    deps = await build_deps(request.app.state.settings, db, job["mode"])
-    it = await generate_itinerary(pkg, constraints.interests, constraints.pace, deps)
-    await db.cache_set(key, it.model_dump(mode="json"), 30 * 86400)
+    it = await _itinerary_for(request, job, pkg, generate=True)
+    assert it is not None
     return it
 
 
@@ -302,7 +305,7 @@ async def export(
     )
 
 
-# --- saved searches & favorites ---------------------------------------------------------------
+# --- saved searches ----------------------------------------------------------------------------
 
 
 class SavedSearchBody(BaseModel):
@@ -326,25 +329,115 @@ async def delete_saved(sid: str, request: Request) -> dict[str, bool]:
     return {"ok": True}
 
 
-class FavoriteBody(BaseModel):
-    job_id: str | None = None
-    package: TripPackage
+# --- my trips (flight + accommodation + itinerary) and e-mail -----------------------------------
 
 
-@app.get("/api/favorites")
-async def list_favorites(request: Request) -> list[dict[str, Any]]:
-    return await _db(request).list_favorites()
+class TripSaveBody(BaseModel):
+    job_id: str
+    package_id: str
+    note: str | None = Field(default=None, max_length=500)
+    include_itinerary: bool = True
 
 
-@app.post("/api/favorites")
-async def add_favorite(body: FavoriteBody, request: Request) -> dict[str, str]:
-    return {"id": await _db(request).add_favorite(body.job_id, body.package.model_dump(mode="json"))}
+async def _itinerary_for(request: Request, job: dict[str, Any], pkg: TripPackage, generate: bool) -> Itinerary | None:
+    db = _db(request)
+    key = f"itinerary:{job['id']}:{pkg.id}"
+    cached = await db.cache_get(key)
+    if cached:
+        return Itinerary.model_validate(cached[0])
+    if not generate:
+        return None
+    constraints = SearchConstraints.model_validate(job["request"])
+    deps = await build_deps(request.app.state.settings, db, job["mode"])
+    it = await generate_itinerary(pkg, constraints.interests, constraints.pace, deps)
+    await db.cache_set(key, it.model_dump(mode="json"), 30 * 86400)
+    return it
 
 
-@app.delete("/api/favorites/{fid}")
-async def delete_favorite(fid: str, request: Request) -> dict[str, bool]:
-    await _db(request).delete_favorite(fid)
+@app.get("/api/trips")
+async def list_trips(request: Request) -> list[dict[str, Any]]:
+    return await _db(request).list_trips()
+
+
+@app.post("/api/trips")
+async def save_trip(body: TripSaveBody, request: Request) -> dict[str, Any]:
+    job, pkg = await _load_package(request, body.job_id, body.package_id)
+    it = await _itinerary_for(request, job, pkg, body.include_itinerary)
+    title = (
+        f"{pkg.destination_name} {pkg.flight.outbound.departure_local:%d.%m.}–"
+        f"{pkg.flight.inbound.departure_local:%d.%m.%Y}"
+    )
+    tid = await _db(request).add_trip(
+        body.job_id, title, body.note, pkg.model_dump(mode="json"), it.model_dump(mode="json") if it else None
+    )
+    trip = await _db(request).get_trip(tid)
+    assert trip is not None
+    return trip
+
+
+async def _load_trip(request: Request, tid: str) -> tuple[dict[str, Any], TripPackage, Itinerary | None]:
+    trip = await _db(request).get_trip(tid)
+    if not trip:
+        raise HTTPException(404, "Putovanje nije pronađeno")
+    pkg = TripPackage.model_validate(trip["package"])
+    it = Itinerary.model_validate(trip["itinerary"]) if trip["itinerary"] else None
+    return trip, pkg, it
+
+
+@app.get("/api/trips/{tid}")
+async def get_trip(tid: str, request: Request) -> dict[str, Any]:
+    trip, _, _ = await _load_trip(request, tid)
+    return trip
+
+
+@app.delete("/api/trips/{tid}")
+async def delete_trip(tid: str, request: Request) -> dict[str, bool]:
+    await _db(request).delete_trip(tid)
     return {"ok": True}
+
+
+@app.get("/api/trips/{tid}/export")
+async def export_trip(tid: str, request: Request, format: Literal["md", "json"] = "md") -> PlainTextResponse:
+    _, pkg, it = await _load_trip(request, tid)
+    name = f"travelscout-{pkg.destination.lower()}-{pkg.flight.outbound.departure_local:%Y%m%d}"
+    if format == "json":
+        return PlainTextResponse(
+            package_to_json(pkg, it),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{name}.json"'},
+        )
+    return PlainTextResponse(
+        package_to_markdown(pkg, it),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}.md"'},
+    )
+
+
+@app.get("/api/mail/status")
+async def mail_status(request: Request) -> dict[str, Any]:
+    s = request.app.state.settings
+    return {
+        "configured": mail_configured(s),
+        "sender": s.gmail_address or None,
+        "default_to": s.mail_to or s.gmail_address or None,
+    }
+
+
+class EmailBody(BaseModel):
+    to: str | None = Field(default=None, max_length=254)
+
+
+@app.post("/api/trips/{tid}/email")
+async def email_trip(tid: str, body: EmailBody, request: Request) -> dict[str, Any]:
+    s = request.app.state.settings
+    trip, pkg, it = await _load_trip(request, tid)
+    to = (body.to or s.mail_to or s.gmail_address or "").strip()
+    try:
+        await send_trip_email(s, to, pkg, it, trip.get("note"))
+    except MailError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    await _db(request).update_trip(tid, emailed=True)
+    return {"ok": True, "to": to}
 
 
 # --- manual import ------------------------------------------------------------------------------

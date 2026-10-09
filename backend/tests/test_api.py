@@ -92,10 +92,16 @@ def test_demo_search_end_to_end(client):
     js = client.get(f"/api/searches/{job['id']}/packages/{pkg['id']}/export?format=json").json()
     assert js["package"]["id"] == pkg["id"] and js["itinerary"] is not None
 
-    fav = client.post("/api/favorites", json={"job_id": job["id"], "package": pkg}).json()
-    assert client.get("/api/favorites").json()[0]["id"] == fav["id"]
-    client.delete(f"/api/favorites/{fav['id']}")
-    assert client.get("/api/favorites").json() == []
+    trip = client.post("/api/trips", json={"job_id": job["id"], "package_id": pkg["id"], "note": "Probni put"}).json()
+    assert trip["package"]["id"] == pkg["id"] and trip["itinerary"] and trip["itinerary"]["days"]
+    assert client.get("/api/trips").json()[0]["id"] == trip["id"]
+    md = client.get(f"/api/trips/{trip['id']}/export?format=md")
+    assert md.status_code == 200 and "## Plan putovanja" in md.text
+    # e-mail is not configured in tests -> clear 400, nothing is sent
+    r = client.post(f"/api/trips/{trip['id']}/email", json={})
+    assert r.status_code == 400 and "GOOGLE_APP_PASSWORD" in r.json()["detail"]
+    client.delete(f"/api/trips/{trip['id']}")
+    assert client.get("/api/trips").json() == []
 
 
 def test_select_is_rejected_when_not_waiting(client):

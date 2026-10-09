@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
 import type { FlightOption, SearchResult, TripPackage } from "../types";
 import { BATHROOM_LABEL, RULE_LABEL, fmtMoney, localDate, money, timestamp } from "../format";
-import { api } from "../api";
-import { OriginBadge, ScoreBadge } from "./Badges";
+import { OriginBadge, Score } from "./Badges";
 import { TripCard } from "./TripCard";
 
 type Filters = {
@@ -37,11 +36,12 @@ type Props = {
   result: SearchResult;
   jobId: string;
   onItinerary: (pkg: TripPackage) => void;
-  onFavorite: (pkg: TripPackage) => void;
+  onSave: (pkg: TripPackage) => void;
+  saveStates: Record<string, "idle" | "saving" | "saved">;
   onCompare: (pkgs: TripPackage[]) => void;
 };
 
-export function Results({ result, jobId, onItinerary, onFavorite, onCompare }: Props) {
+export function Results({ result, onItinerary, onSave, saveStates, onCompare }: Props) {
   const [filters, setFilters] = useState<Filters>(INITIAL);
   const [compare, setCompare] = useState<string[]>([]);
   const cur = result.constraints.display_currency;
@@ -85,38 +85,50 @@ export function Results({ result, jobId, onItinerary, onFavorite, onCompare }: P
       ) : null}
 
       <section className="card panel stack">
-        <div className="row spread">
+        <div>
+          <div className="eyebrow">Korak 2 · smeštaj za izabrane letove</div>
           <h2>
-            {hasPackages ? `${result.packages.length} paketa ispunjava sve uslove` : "Nema paketa koji ispunjavaju sve uslove"}
+            {hasPackages
+              ? `${result.packages.length} ${result.packages.length === 1 ? "putovanje ispunjava" : "putovanja ispunjavaju"} sve uslove`
+              : "Nijedno putovanje ne ispunjava sve uslove"}
           </h2>
-          <span className="tiny muted">
-            {result.used_llm ? "Agenti: OpenAI" : "Agenti: pravila (bez LLM-a)"} · {result.fx_status} · {timestamp(result.generated_at)}
-          </span>
+          {rejectedTotal > 0 ? (
+            <p className="small muted" style={{ margin: "4px 0 0" }}>
+              Odbijeno ponuda smeštaja: {rejectedTotal} (
+              {Object.entries(result.rejected_counts)
+                .map(([k, v]) => `${RULE_LABEL[k] ?? k} ${v}`)
+                .join(", ")}
+              )
+            </p>
+          ) : null}
         </div>
-        <div className="row" style={{ gap: 6 }}>
-          {result.provider_status.map((s) => (
-            <span
-              key={s.provider}
-              className={`badge ${s.status === "ok" ? "ok" : s.status === "disabled" ? "neutral" : s.status === "partial" ? "warn" : "bad"}`}
-              title={s.message ?? ""}
-            >
-              {s.provider}: {s.status === "ok" ? "OK" : s.status === "disabled" ? "isključeno" : s.status === "partial" ? "delimično" : "greška"}
-            </span>
-          ))}
-        </div>
-        {result.agent_notes.map((n) => (
-          <div key={n} className="small muted">
-            {n}
+        <details>
+          <summary className="muted">Izvori podataka i rad agenata</summary>
+          <div className="stack" style={{ gap: 6 }}>
+            <div className="row" style={{ gap: 16 }}>
+              {result.provider_status.map((s) => (
+                <span
+                  key={s.provider}
+                  className={`badge ${s.status === "ok" ? "ok" : s.status === "disabled" ? "neutral" : s.status === "partial" ? "warn" : "bad"}`}
+                  title={s.message ?? ""}
+                >
+                  {s.provider}
+                  <span className="when">
+                    {s.status === "ok" ? "radi" : s.status === "disabled" ? "isključeno" : s.status === "partial" ? "delimično" : "greška"}
+                  </span>
+                </span>
+              ))}
+            </div>
+            {result.agent_notes.map((n) => (
+              <div key={n} className="small muted">
+                {n}
+              </div>
+            ))}
+            <div className="tiny muted">
+              {result.used_llm ? "Agenti: OpenAI" : "Agenti: pravila (bez LLM-a)"} · {result.fx_status} · {timestamp(result.generated_at)}
+            </div>
           </div>
-        ))}
-        {rejectedTotal > 0 ? (
-          <div className="small">
-            Odbijene ponude smeštaja:{" "}
-            {Object.entries(result.rejected_counts)
-              .map(([k, v]) => `${RULE_LABEL[k] ?? k} (${v})`)
-              .join(", ")}
-          </div>
-        ) : null}
+        </details>
         {result.diagnostics.length || result.suggestions.length ? (
           <div className={`notice ${hasPackages ? "info" : "warn"} small`}>
             {result.diagnostics.map((d, i) => (
@@ -138,7 +150,9 @@ export function Results({ result, jobId, onItinerary, onFavorite, onCompare }: P
           </div>
         ) : null}
 
-        {hasPackages ? (
+        {result.packages.length > 1 ? (
+          <details>
+          <summary className="muted">Filteri i sortiranje</summary>
           <div className="filters" role="group" aria-label="Filteri">
             <label className="field">
               Maks. po osobi ({cur})
@@ -179,6 +193,7 @@ export function Results({ result, jobId, onItinerary, onFavorite, onCompare }: P
               </select>
             </label>
           </div>
+          </details>
         ) : null}
       </section>
 
@@ -197,17 +212,17 @@ export function Results({ result, jobId, onItinerary, onFavorite, onCompare }: P
             key={p.id}
             pkg={p}
             onItinerary={() => onItinerary(p)}
-            onFavorite={() => onFavorite(p)}
+            onSave={() => onSave(p)}
+            saveState={saveStates[p.id] ?? "idle"}
             compareChecked={compare.includes(p.id)}
             compareDisabled={compare.length >= 3}
             onCompare={(checked) => setCompare((c) => (checked ? [...c, p.id].slice(0, 3) : c.filter((x) => x !== p.id)))}
-            exportLinks={{ md: api.exportUrl(jobId, p.id, "md"), json: api.exportUrl(jobId, p.id, "json") }}
           />
         ))}
       </div>
 
       {compare.length > 0 ? (
-        <div className="card compare-tray">
+        <div className="sticky-bar">
           <strong>Za poređenje: {compare.length}/3</strong>
           <span className="small muted">{comparePkgs.map((p) => p.destination_name).join(", ")}</span>
           <button className="btn small primary" disabled={compare.length < 2} onClick={() => onCompare(comparePkgs)} style={{ marginLeft: "auto" }}>
@@ -265,7 +280,7 @@ export function Results({ result, jobId, onItinerary, onFavorite, onCompare }: P
                     </span>
                     <div className="row" style={{ gap: 6 }}>
                       <OriginBadge origin={a.offer.evidence.origin} at={a.offer.evidence.retrieved_at} />
-                      <ScoreBadge score={a.offer.review_score} count={a.offer.review_count} />
+                      <Score score={a.offer.review_score} count={a.offer.review_count} />
                       <span className="badge neutral">{BATHROOM_LABEL[a.offer.bathroom]}</span>
                       {a.eligibility.unverified.map((u) => (
                         <span key={u} className="badge warn">

@@ -1,14 +1,14 @@
 import type {
-  Favorite,
   Integrations,
   InterpretedRequest,
   Itinerary,
   Job,
   ManualRecord,
+  MailStatus,
   Meta,
   SavedSearch,
+  SavedTrip,
   SearchConstraints,
-  TripPackage,
 } from "./types";
 
 export class ApiError extends Error {
@@ -77,10 +77,13 @@ export const api = {
   saveSearch: (name: string, constraints: SearchConstraints) =>
     post<{ id: string }>("/api/saved-searches", { name, constraints }),
   deleteSavedSearch: (id: string) => del(`/api/saved-searches/${id}`),
-  favorites: () => request<Favorite[]>("/api/favorites"),
-  addFavorite: (jobId: string | null, pkg: TripPackage) =>
-    post<{ id: string }>("/api/favorites", { job_id: jobId, package: pkg }),
-  deleteFavorite: (id: string) => del(`/api/favorites/${id}`),
+  trips: () => request<SavedTrip[]>("/api/trips"),
+  saveTrip: (jobId: string, pkgId: string, note?: string) =>
+    post<SavedTrip>("/api/trips", { job_id: jobId, package_id: pkgId, note: note || null, include_itinerary: true }),
+  deleteTrip: (id: string) => del(`/api/trips/${id}`),
+  tripExportUrl: (id: string, format: "md" | "json") => `/api/trips/${id}/export?format=${format}`,
+  mailStatus: () => request<MailStatus>("/api/mail/status"),
+  emailTrip: (id: string, to: string) => post<{ ok: boolean; to: string }>(`/api/trips/${id}/email`, { to: to || null }),
   manual: () => request<ManualRecord[]>("/api/manual"),
   addManual: (kind: "flight" | "accommodation", payload: unknown) => post<{ id: string }>(`/api/manual/${kind}`, payload),
   deleteManual: (id: string) => del(`/api/manual/${id}`),

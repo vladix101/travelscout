@@ -106,3 +106,7 @@ def make_leg(
 
 
 __all__ = ["make_constraints", "make_offer", "make_leg", "Party", "CHECKIN", "CHECKOUT"]
+
+os.environ["GMAIL_ADDRESS"] = ""
+os.environ["GOOGLE_APP_PASSWORD"] = ""
+os.environ["MAIL_TO"] = ""

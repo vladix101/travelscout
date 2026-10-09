@@ -34,12 +34,15 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     name TEXT NOT NULL,
     constraints_json TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS favorites (
+CREATE TABLE IF NOT EXISTS trips (
     id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
     job_id TEXT,
-    package_id TEXT NOT NULL,
-    package_json TEXT NOT NULL
+    title TEXT NOT NULL,
+    note TEXT,
+    package_json TEXT NOT NULL,
+    itinerary_json TEXT,
+    emailed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS manual_offers (
     id TEXT PRIMARY KEY,
@@ -169,28 +172,65 @@ class Database:
     async def delete_saved_search(self, sid: str) -> None:
         await self.run("DELETE FROM saved_searches WHERE id = ?", (sid,))
 
-    async def add_favorite(self, job_id: str | None, package: dict[str, Any]) -> str:
-        fid = uuid.uuid4().hex[:12]
+    async def add_trip(
+        self,
+        job_id: str | None,
+        title: str,
+        note: str | None,
+        package: dict[str, Any],
+        itinerary: dict[str, Any] | None,
+    ) -> str:
+        tid = uuid.uuid4().hex[:12]
         await self.run(
-            "INSERT INTO favorites VALUES (?,?,?,?,?)",
-            (fid, now_iso(), job_id, package["id"], json.dumps(package, default=str)),
+            "INSERT INTO trips (id, created_at, job_id, title, note, package_json, itinerary_json) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (
+                tid,
+                now_iso(),
+                job_id,
+                title,
+                note,
+                json.dumps(package, default=str),
+                json.dumps(itinerary, default=str) if itinerary else None,
+            ),
         )
-        return fid
+        return tid
 
-    async def list_favorites(self) -> list[dict[str, Any]]:
-        rows = await self.run("SELECT * FROM favorites ORDER BY created_at DESC")
-        return [
-            {
-                "id": r["id"],
-                "created_at": r["created_at"],
-                "job_id": r["job_id"],
-                "package": json.loads(r["package_json"]),
-            }
-            for r in rows
-        ]
+    @staticmethod
+    def _trip_row(r: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": r["id"],
+            "created_at": r["created_at"],
+            "job_id": r["job_id"],
+            "title": r["title"],
+            "note": r["note"],
+            "emailed_at": r["emailed_at"],
+            "package": json.loads(r["package_json"]),
+            "itinerary": json.loads(r["itinerary_json"]) if r["itinerary_json"] else None,
+        }
 
-    async def delete_favorite(self, fid: str) -> None:
-        await self.run("DELETE FROM favorites WHERE id = ?", (fid,))
+    async def list_trips(self) -> list[dict[str, Any]]:
+        rows = await self.run("SELECT * FROM trips ORDER BY created_at DESC")
+        return [self._trip_row(r) for r in rows]
+
+    async def get_trip(self, tid: str) -> dict[str, Any] | None:
+        rows = await self.run("SELECT * FROM trips WHERE id = ?", (tid,))
+        return self._trip_row(rows[0]) if rows else None
+
+    async def update_trip(
+        self, tid: str, *, itinerary: dict[str, Any] | None = None, emailed: bool = False, note: str | None = None
+    ) -> None:
+        if itinerary is not None:
+            await self.run(
+                "UPDATE trips SET itinerary_json = ? WHERE id = ?", (json.dumps(itinerary, default=str), tid)
+            )
+        if emailed:
+            await self.run("UPDATE trips SET emailed_at = ? WHERE id = ?", (now_iso(), tid))
+        if note is not None:
+            await self.run("UPDATE trips SET note = ? WHERE id = ?", (note, tid))
+
+    async def delete_trip(self, tid: str) -> None:
+        await self.run("DELETE FROM trips WHERE id = ?", (tid,))
 
     async def add_manual_offer(self, kind: str, payload: dict[str, Any]) -> str:
         mid = payload.get("id") or f"manual-{uuid.uuid4().hex[:10]}"

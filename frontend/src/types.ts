@@ -313,5 +313,15 @@ export type Integrations = {
 };
 
 export type SavedSearch = { id: string; created_at: string; name: string; constraints: SearchConstraints };
-export type Favorite = { id: string; created_at: string; job_id: string | null; package: TripPackage };
+export type SavedTrip = {
+  id: string;
+  created_at: string;
+  job_id: string | null;
+  title: string;
+  note: string | null;
+  emailed_at: string | null;
+  package: TripPackage;
+  itinerary: Itinerary | null;
+};
+export type MailStatus = { configured: boolean; sender: string | null; default_to: string | null };
 export type ManualRecord = { id: string; kind: "flight" | "accommodation"; created_at: string; payload: Record<string, unknown> };
