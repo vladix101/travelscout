@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { TripPackage } from "../types";
-import { BATHROOM_LABEL, ORIGIN_LABEL, fmtMoney, localDate, localTime, money } from "../format";
+import { BATHROOM_LABEL, fmtMoney, localDate, localTime, money } from "../format";
 import { Modal } from "./Modal";
 
 export function CompareView({ packages, onClose }: { packages: TripPackage[]; onClose: () => void }) {
@@ -22,7 +22,6 @@ export function CompareView({ packages, onClose }: { packages: TripPackage[]; on
     ["Procene", (p) => money(p.cost.estimated, p.cost.currency)],
     ["Uporedivo ukupno", (p) => money(p.cost.comparable_total, p.cost.currency)],
     ["Nepoznato", (p) => (p.cost.unknown_items.length ? p.cost.unknown_items.join("; ") : "—")],
-    ["Izvori", (p) => p.data_origins.map((o) => ORIGIN_LABEL[o]).join(", ")],
   ];
   return (
     <Modal title="Poređenje putovanja" onClose={onClose}>

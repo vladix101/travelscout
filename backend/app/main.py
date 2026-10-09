@@ -413,6 +413,24 @@ async def export_trip(tid: str, request: Request, format: Literal["md", "json"] 
     )
 
 
+class EmailBody(BaseModel):
+    to: str | None = Field(default=None, max_length=254)
+
+
+@app.post("/api/searches/{job_id}/packages/{package_id}/email")
+async def email_package(job_id: str, package_id: str, body: EmailBody, request: Request) -> dict[str, Any]:
+    """Send a trip straight from search results without saving it."""
+    s = request.app.state.settings
+    job, pkg = await _load_package(request, job_id, package_id)
+    it = await _itinerary_for(request, job, pkg, generate=True)
+    to = (body.to or s.mail_to or s.gmail_address or "").strip()
+    try:
+        await send_trip_email(s, to, pkg, it)
+    except MailError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "to": to}
+
+
 @app.get("/api/mail/status")
 async def mail_status(request: Request) -> dict[str, Any]:
     s = request.app.state.settings
@@ -421,10 +439,6 @@ async def mail_status(request: Request) -> dict[str, Any]:
         "sender": s.gmail_address or None,
         "default_to": s.mail_to or s.gmail_address or None,
     }
-
-
-class EmailBody(BaseModel):
-    to: str | None = Field(default=None, max_length=254)
 
 
 @app.post("/api/trips/{tid}/email")

@@ -18,14 +18,6 @@ const KIND_LABEL: Record<string, string> = {
 export function ItineraryBody({ data }: { data: Itinerary }) {
   return (
     <div className="stack" style={{ gap: 0 }}>
-      <div className="row" style={{ gap: 16, marginBottom: 10 }}>
-        <span className={`badge ${data.used_llm ? "ok" : "neutral"}`}>{data.used_llm ? "Itinerary Agent" : "Plan po pravilima"}</span>
-        {data.sources.map((s) => (
-          <span key={s} className="badge neutral">
-            {s}
-          </span>
-        ))}
-      </div>
       <div className="day" style={{ borderTop: 0, paddingTop: 0 }}>
         <div className="eyebrow" style={{ marginBottom: 4 }}>
           Aerodrom ↔ smeštaj
@@ -49,9 +41,7 @@ export function ItineraryBody({ data }: { data: Itinerary }) {
         <section key={d.date} className="day">
           <div className="day-head">
             <h3>
-              <span className="muted" style={{ fontStyle: "italic" }}>
-                Dan {idx + 1} ·
-              </span>{" "}
+              <span className="muted">Dan {idx + 1} ·</span>{" "}
               {localDay(d.date)} — {d.title}
             </h3>
             <span className="tiny muted">

@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import type { FlightOption, SearchResult } from "../types";
 import { localDay, localTime, money, nightsBetween } from "../format";
-import { OriginBadge } from "./Badges";
 
 type Props = {
   result: SearchResult;
@@ -138,9 +137,6 @@ export function FlightChoices({ result, maxSelect, busy, onConfirm }: Props) {
                   <b className="tnum">{money(o.total_fare.amount, "€")}</b>
                   <div className="tiny muted">
                     {money(Number(o.total_fare.amount) / people, "€")} po osobi{isCheapest ? " · najjeftinije" : ""}
-                  </div>
-                  <div style={{ marginTop: 2 }}>
-                    <OriginBadge origin={o.evidence.origin} />
                   </div>
                 </div>
               </div>

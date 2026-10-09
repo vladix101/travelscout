@@ -9,7 +9,6 @@ type Props = {
   value: SearchConstraints;
   onChange: (c: SearchConstraints) => void;
   mode: "demo" | "live";
-  onModeChange: (m: "demo" | "live") => void;
   onSearch: (text: string) => void;
   text: string;
   onTextChange: (t: string) => void;
@@ -333,24 +332,9 @@ export function SearchForm(p: Props) {
         </details>
 
         <div className="form-section stack">
-          <div className="row spread">
-            <span className="form-label" style={{ margin: 0 }}>
-              Podaci
-            </span>
-            <div className="segmented" role="group" aria-label="Izvor podataka">
-              <button type="button" aria-pressed={p.mode === "live"} onClick={() => p.onModeChange("live")}>
-                Stvarni
-              </button>
-              <button type="button" aria-pressed={p.mode === "demo"} onClick={() => p.onModeChange("demo")}>
-                Demo
-              </button>
-            </div>
-          </div>
-          <span className="tiny muted">
-            {p.mode === "demo"
-              ? "Izmišljeni podaci za isprobavanje – nisu stvarne ponude."
-              : `Wizz Air ${p.meta.live_flights ? "uključen" : "isključen"} · Booking.com ${p.meta.live_accommodation ? "uključen" : "isključen"} · ručno uneto`}
-          </span>
+          {p.mode === "demo" ? (
+            <div className="notice demo small">Demo režim: izmišljeni podaci (menja se u „Izvori podataka“).</div>
+          ) : null}
           {touched && errors.length > 0 && !text.trim() ? (
             <div className="notice bad small" role="alert">
               <ul style={{ margin: 0 }}>

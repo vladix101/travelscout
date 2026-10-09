@@ -14,13 +14,7 @@ function headline(job: Job, step: number): string {
   if (job.status === "awaiting_selection") return "Letovi su pronađeni – izaberite datume";
   if (job.status === "done") return "Gotovo";
   if (job.status === "partial") return "Gotovo, uz delimične rezultate";
-  const last = [...job.progress].reverse().find((e) => e.status === "running");
-  return last?.message ?? (step === 1 ? "Tražim letove…" : "Tražim smeštaj…");
-}
-
-function clock(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("sr-Latn-RS", { hour: "2-digit", minute: "2-digit" });
+  return step === 1 ? "Tražim letove za vaše datume…" : "Tražim smeštaj za izabrane letove…";
 }
 
 export function ProgressPanel({ job, onCancel }: { job: Job; onCancel: () => void }) {
@@ -56,24 +50,6 @@ export function ProgressPanel({ job, onCancel }: { job: Job; onCancel: () => voi
           {job.error}
         </div>
       ) : null}
-      <details style={{ marginTop: 10 }}>
-        <summary className="muted">Šta su agenti radili ({job.progress.length})</summary>
-        <ul className="progress-list">
-          {[...job.progress]
-            .reverse()
-            .slice(0, 60)
-            .map((e, i) => (
-              <li key={i} className={e.status === "warning" ? "warning" : e.status === "error" ? "error" : undefined}>
-                <span className="t">{clock(e.at)}</span>
-                <span>
-                  {e.agent ? <strong>{e.agent}: </strong> : null}
-                  {e.message}
-                  {e.tool ? <span className="muted"> · alat {e.tool}</span> : null}
-                </span>
-              </li>
-            ))}
-        </ul>
-      </details>
     </section>
   );
 }

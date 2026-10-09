@@ -11,7 +11,7 @@ const STATUS: Record<string, [string, string]> = {
   error: ["bad", "Greška"],
 };
 
-export function IntegrationsPanel() {
+export function IntegrationsPanel({ mode, onModeChange }: { mode: "demo" | "live"; onModeChange: (m: "demo" | "live") => void }) {
   const [data, setData] = useState<Integrations | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -20,6 +20,24 @@ export function IntegrationsPanel() {
 
   return (
     <div className="stack">
+      <section className="card panel stack">
+        <div className="row spread">
+          <div>
+            <h2>Podaci za pretragu</h2>
+            <p className="small muted" style={{ margin: "4px 0 0" }}>
+              Demo režim koristi izmišljene letove i smeštaj za isprobavanje aplikacije bez pravih ponuda.
+            </p>
+          </div>
+          <div className="segmented" role="group" aria-label="Izvor podataka">
+            <button type="button" aria-pressed={mode === "live"} onClick={() => onModeChange("live")}>
+              Stvarni podaci
+            </button>
+            <button type="button" aria-pressed={mode === "demo"} onClick={() => onModeChange("demo")}>
+              Demo
+            </button>
+          </div>
+        </div>
+      </section>
       <section className="card panel stack">
         <h2>Status integracija</h2>
         <div className="small">

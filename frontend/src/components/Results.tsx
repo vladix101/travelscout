@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import type { FlightOption, SearchResult, TripPackage } from "../types";
-import { BATHROOM_LABEL, RULE_LABEL, fmtMoney, localDate, money, timestamp } from "../format";
-import { OriginBadge, Score } from "./Badges";
+import type { FlightOption, MailStatus, SearchResult, TripPackage } from "../types";
+import { BATHROOM_LABEL, RULE_LABEL, fmtMoney, localDate, money } from "../format";
+import { Score } from "./Badges";
 import { TripCard } from "./TripCard";
 
 type Filters = {
@@ -38,10 +38,12 @@ type Props = {
   onItinerary: (pkg: TripPackage) => void;
   onSave: (pkg: TripPackage) => void;
   saveStates: Record<string, "idle" | "saving" | "saved">;
+  mail: MailStatus | null;
+  onSendMail: (pkg: TripPackage, to: string) => Promise<{ to: string }>;
   onCompare: (pkgs: TripPackage[]) => void;
 };
 
-export function Results({ result, onItinerary, onSave, saveStates, onCompare }: Props) {
+export function Results({ result, onItinerary, onSave, saveStates, onCompare, mail, onSendMail }: Props) {
   const [filters, setFilters] = useState<Filters>(INITIAL);
   const [compare, setCompare] = useState<string[]>([]);
   const cur = result.constraints.display_currency;
@@ -102,33 +104,7 @@ export function Results({ result, onItinerary, onSave, saveStates, onCompare }: 
             </p>
           ) : null}
         </div>
-        <details>
-          <summary className="muted">Izvori podataka i rad agenata</summary>
-          <div className="stack" style={{ gap: 6 }}>
-            <div className="row" style={{ gap: 16 }}>
-              {result.provider_status.map((s) => (
-                <span
-                  key={s.provider}
-                  className={`badge ${s.status === "ok" ? "ok" : s.status === "disabled" ? "neutral" : s.status === "partial" ? "warn" : "bad"}`}
-                  title={s.message ?? ""}
-                >
-                  {s.provider}
-                  <span className="when">
-                    {s.status === "ok" ? "radi" : s.status === "disabled" ? "isključeno" : s.status === "partial" ? "delimično" : "greška"}
-                  </span>
-                </span>
-              ))}
-            </div>
-            {result.agent_notes.map((n) => (
-              <div key={n} className="small muted">
-                {n}
-              </div>
-            ))}
-            <div className="tiny muted">
-              {result.used_llm ? "Agenti: OpenAI" : "Agenti: pravila (bez LLM-a)"} · {result.fx_status} · {timestamp(result.generated_at)}
-            </div>
-          </div>
-        </details>
+
         {result.diagnostics.length || result.suggestions.length ? (
           <div className={`notice ${hasPackages ? "info" : "warn"} small`}>
             {result.diagnostics.map((d, i) => (
@@ -214,6 +190,8 @@ export function Results({ result, onItinerary, onSave, saveStates, onCompare }: 
             onItinerary={() => onItinerary(p)}
             onSave={() => onSave(p)}
             saveState={saveStates[p.id] ?? "idle"}
+            mail={mail}
+            onSendMail={(to) => onSendMail(p, to)}
             compareChecked={compare.includes(p.id)}
             compareDisabled={compare.length >= 3}
             onCompare={(checked) => setCompare((c) => (checked ? [...c, p.id].slice(0, 3) : c.filter((x) => x !== p.id)))}
@@ -247,7 +225,8 @@ export function Results({ result, onItinerary, onSave, saveStates, onCompare }: 
                   {f.outbound.origin} → {f.outbound.destination}
                 </strong>{" "}
                 {localDate(f.outbound.departure_local)} – {localDate(f.inbound.departure_local)} · {money(f.total_fare.amount, f.total_fare.currency)} za
-                sve putnike <OriginBadge origin={f.evidence.origin} at={f.evidence.retrieved_at} />
+               
+                sve putnike
               </div>
               <div className="row">
                 {f.booking_url ? (
@@ -279,7 +258,6 @@ export function Results({ result, onItinerary, onSave, saveStates, onCompare }: 
                       {a.offer.room_name ?? "soba nepoznata"} · {localDate(a.offer.checkin)} → {localDate(a.offer.checkout)} · {fmtMoney(a.offer.total_price)}
                     </span>
                     <div className="row" style={{ gap: 6 }}>
-                      <OriginBadge origin={a.offer.evidence.origin} at={a.offer.evidence.retrieved_at} />
                       <Score score={a.offer.review_score} count={a.offer.review_count} />
                       <span className="badge neutral">{BATHROOM_LABEL[a.offer.bathroom]}</span>
                       {a.eligibility.unverified.map((u) => (

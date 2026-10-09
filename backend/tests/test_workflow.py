@@ -320,3 +320,34 @@ def test_overpass_parse_prefers_notable_and_dedupes():
     assert [p.name for p in pois] == ["Colosseum", "Small Statue"]
     assert pois[0].fee == "yes" and pois[0].website is None  # non-https links are dropped
     assert pois[0].wikipedia == "https://en.wikipedia.org/wiki/Colosseum"
+
+
+def test_missing_llm_days_are_filled_from_rules():
+    from app.agents.itinerary_agent import (
+        DraftDay,
+        DraftItem,
+        ItineraryDraft,
+        fill_missing_days,
+        transfer_minutes,
+        trip_window,
+    )
+    from tests.test_ranking import pkg as ranking_pkg
+
+    p = ranking_pkg("x", "400")
+    free_from, free_until = trip_window(p, transfer_minutes(p))
+    expected = {
+        (free_from.date() + timedelta(days=i)).isoformat()
+        for i in range((free_until.date() - free_from.date()).days + 1)
+    }
+    only_first = ItineraryDraft(
+        days=[
+            DraftDay(
+                date=free_from.date().isoformat(),
+                title="Dolazak",
+                items=[DraftItem(start="18:00", end="19:00", title="Šetnja", kind="free_time")],
+            )
+        ]
+    )
+    filled = fill_missing_days(only_first, {"package": p, "pace": Pace.MODERATE, "pois": [], "centre": (41.9, 12.48)})
+    assert {d.date for d in filled.days} == expected
+    assert filled.days[0].title == "Dolazak"  # the model's own day is kept

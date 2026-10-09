@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { MailStatus, SavedTrip } from "../types";
 import { fmtMoney, localDate, money, timestamp } from "../format";
-import { BathroomBadge, OriginBadge, Pass, Score } from "./Badges";
+import { BathroomBadge, Pass, Score } from "./Badges";
+import { SendMail } from "./SendMail";
 import { CostTable } from "./CostTable";
 import { ItineraryBody } from "./ItineraryView";
 
@@ -16,28 +17,6 @@ function TripDetail({ trip, mail, onBack, onDeleted, onChanged }: {
   const pkg = trip.package;
   const f = pkg.flight;
   const o = pkg.accommodation.offer;
-  const [to, setTo] = useState(mail?.default_to ?? "");
-  const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-
-  useEffect(() => {
-    if (!to && mail?.default_to) setTo(mail.default_to);
-  }, [mail, to]);
-
-  const send = async () => {
-    setSending(true);
-    setResult(null);
-    try {
-      const r = await api.emailTrip(trip.id, to.trim());
-      setResult({ ok: true, text: `Poslato na ${r.to}.` });
-      onChanged();
-    } catch (e) {
-      setResult({ ok: false, text: (e as Error).message });
-    } finally {
-      setSending(false);
-    }
-  };
-
   return (
     <article className="card panel trip-detail">
       <button className="btn ghost small" onClick={onBack} style={{ paddingLeft: 0 }}>
@@ -50,11 +29,6 @@ function TripDetail({ trip, mail, onBack, onDeleted, onChanged }: {
           <div className="muted">
             {localDate(f.outbound.departure_local)} – {localDate(f.inbound.departure_local)} · {pkg.usable_time.nights} noći
           </div>
-          <div className="row" style={{ gap: 14, marginTop: 6 }}>
-            {pkg.data_origins.map((d) => (
-              <OriginBadge key={d} origin={d} />
-            ))}
-          </div>
         </div>
         <div className="price-block">
           <div className="big tnum">{money(pkg.cost.known_total, pkg.cost.currency)}</div>
@@ -64,29 +38,20 @@ function TripDetail({ trip, mail, onBack, onDeleted, onChanged }: {
       {trip.note ? <p className="notice info small">{trip.note}</p> : null}
 
       <section className="detail-section">
-        <div className="eyebrow">Pošalji na mejl</div>
-        {mail?.configured ? (
-          <div className="stack" style={{ gap: 8, marginTop: 8 }}>
-            <div className="mail-box">
-              <label className="field">
-                Primalac
-                <input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="ime@gmail.com" />
-              </label>
-              <button className="btn dark" onClick={send} disabled={sending || !to.trim()}>
-                {sending ? "Šaljem…" : "Pošalji putovanje"}
-              </button>
-            </div>
-            <span className="tiny muted">
-              Šalje se sa {mail.sender}: let, smeštaj, troškovi i plan obilaska, uz Markdown i JSON u prilogu.
-              {trip.emailed_at ? ` Poslednje slanje: ${timestamp(trip.emailed_at)}.` : ""}
-            </span>
-            {result ? <div className={`notice ${result.ok ? "ok" : "bad"} small`}>{result.text}</div> : null}
-          </div>
-        ) : (
-          <p className="small muted">
-            Slanje nije podešeno. U <code>.env</code> dodajte <code>GMAIL_ADDRESS</code> i <code>GOOGLE_APP_PASSWORD</code>, pa restartujte server.
-          </p>
-        )}
+        <div className="eyebrow" style={{ marginBottom: 8 }}>
+          Pošalji na mejl
+        </div>
+        <SendMail
+          mail={mail}
+          onSend={async (to) => {
+            const r = await api.emailTrip(trip.id, to);
+            onChanged();
+            return r;
+          }}
+          note={`Let, smeštaj, troškovi i plan obilaska, uz Markdown i JSON u prilogu.${
+            trip.emailed_at ? ` Poslednje slanje: ${timestamp(trip.emailed_at)}.` : ""
+          }`}
+        />
       </section>
 
       <section className="detail-section split">
@@ -228,9 +193,6 @@ export function MyTrips({ trips, openId, onOpen, onReload }: {
                 {p.accommodation.offer.property_name}
               </div>
               <div className="row" style={{ gap: 14, marginTop: 6 }}>
-                {p.data_origins.map((d) => (
-                  <OriginBadge key={d} origin={d} />
-                ))}
                 {t.itinerary ? <span className="badge neutral">Plan obilaska</span> : null}
                 {t.emailed_at ? <span className="badge ok">Poslato mejlom</span> : null}
               </div>

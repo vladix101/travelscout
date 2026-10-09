@@ -170,6 +170,7 @@ Pravila:
   (fee="no" ili nepoznato za trgove/parkove), plaćene navedi kao opcione.
 - Poštuj vremenske okvire: prvi dan počinje tek posle dolaska i transfera, poslednji dan se završava pre odlaska na
   aerodrom. Ubaci obroke (ručak, večera), pauze i realno vreme između lokacija.
+- U 'days' mora postojati TAČNO po jedan dan za svaki datum iz 'required_dates' (i prvi i poslednji dan).
 - Tempo i broj znamenitosti dnevno: {pace}. Interesovanja: {interests}.
 - Za transfer aerodrom↔smeštaj opiši opšte opcije (autobus/voz/taksi) sa procenom trajanja; to su procene.
 - NE izmišljaj radna vremena, cene ulaznica, ture, linkove ni koordinate. {rule}"""
@@ -231,6 +232,10 @@ async def plan_with_llm(state: ItineraryState, deps: RunDeps) -> ItineraryDraft 
         "accommodation_distance_km_to_centre": str(offer.distance_km) if offer.distance_km is not None else None,
         "travellers": pkg.flight.passengers[0].count if pkg.flight.passengers else None,
         "has_children": any(p.passenger_type == "child" for p in pkg.flight.passengers),
+        "required_dates": [
+            (free_from.date() + timedelta(days=i)).isoformat()
+            for i in range((free_until.date() - free_from.date()).days + 1)
+        ],
         "attractions": [poi_brief(p) for p in list(pois.values())[:40]],
     }
     agent = create_agent(
@@ -351,6 +356,19 @@ def plan_with_rules(state: ItineraryState) -> ItineraryDraft:
     return ItineraryDraft(days=days, transfers=[])
 
 
+def fill_missing_days(draft: ItineraryDraft, state: ItineraryState) -> ItineraryDraft:
+    """The model sometimes skips days; fill any missing trip day from the rule-based planner,
+    using attractions the model has not already scheduled."""
+    have = {d.date for d in draft.days}
+    used = {i.poi_id for d in draft.days for i in d.items if i.poi_id}
+    rest = [p for p in state.get("pois", []) if p.id not in used]
+    rules = plan_with_rules({**state, "pois": rest})  # type: ignore[typeddict-item]
+    missing = [d for d in rules.days if d.date not in have]
+    if not missing:
+        return draft
+    return draft.model_copy(update={"days": sorted([*draft.days, *missing], key=lambda d: d.date)})
+
+
 async def plan(state: ItineraryState, config: RunnableConfig) -> dict[str, Any]:
     deps = _deps(config)
     notes = list(state.get("notes", []))
@@ -358,6 +376,7 @@ async def plan(state: ItineraryState, config: RunnableConfig) -> dict[str, Any]:
         try:
             draft = await plan_with_llm(state, deps)
             if draft and draft.days:
+                draft = fill_missing_days(draft, state)
                 return {"draft": draft, "used_llm": True, "pois": state.get("pois", []), "notes": notes}
         except Exception as exc:  # noqa: BLE001
             log.warning("itinerary agent failed: %s", type(exc).__name__)

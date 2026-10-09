@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import type { InterpretationNote, Job, Meta, SavedSearch, SavedTrip, SearchConstraints, TripPackage } from "./types";
+import type { InterpretationNote, Job, MailStatus, Meta, SavedSearch, SavedTrip, SearchConstraints, TripPackage } from "./types";
 import { SearchForm, validateConstraints } from "./components/SearchForm";
 import { ProgressPanel } from "./components/ProgressPanel";
 import { Results } from "./components/Results";
@@ -23,12 +23,28 @@ const TABS: [Tab, string][] = [
 
 const POLL_MS = 1000;
 const JOB_KEY = "travelscout:lastJob";
+const MODE_KEY = "travelscout:mode";
 
 function readLastJob(): string | null {
   try {
     return localStorage.getItem(JOB_KEY);
   } catch {
     return null;
+  }
+}
+function readMode(): "demo" | "live" | null {
+  try {
+    const m = localStorage.getItem(MODE_KEY);
+    return m === "demo" || m === "live" ? m : null;
+  } catch {
+    return null;
+  }
+}
+function writeMode(m: "demo" | "live") {
+  try {
+    localStorage.setItem(MODE_KEY, m);
+  } catch {
+    /* storage unavailable */
   }
 }
 function writeLastJob(id: string) {
@@ -47,7 +63,12 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("search");
   const [constraints, setConstraints] = useState<SearchConstraints | null>(null);
   const [formKey, setFormKey] = useState(0);
-  const [mode, setMode] = useState<"demo" | "live">("demo");
+  const [mode, setModeState] = useState<"demo" | "live">("demo");
+  const [mail, setMail] = useState<MailStatus | null>(null);
+  const setMode = (m: "demo" | "live") => {
+    setModeState(m);
+    writeMode(m);
+  };
   const [notes, setNotes] = useState<InterpretationNote[] | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
@@ -101,10 +122,11 @@ export default function App() {
       .then((m) => {
         setMeta(m);
         setConstraints(m.defaults);
-        if (m.live_flights || m.live_accommodation) setMode("live");
+        setModeState(readMode() ?? (m.live_flights || m.live_accommodation ? "live" : "demo"));
       })
       .catch((e: Error) => setMetaError(e.message));
     loadLibrary();
+    api.mailStatus().then(setMail).catch(() => setMail(null));
     const last = readLastJob();
     if (last) poll(last);
     return stopPolling;
@@ -223,7 +245,6 @@ export default function App() {
                   value={constraints}
                   onChange={setConstraints}
                   mode={mode}
-                  onModeChange={setMode}
                   busy={running}
                   interpretNotes={notes}
                   onSearch={(text) => runSearch(constraints, mode, text)}
@@ -280,6 +301,8 @@ export default function App() {
                   onSave={saveTrip}
                   saveStates={saveStates}
                   onCompare={setComparing}
+                  mail={mail}
+                  onSendMail={(pkg, to) => api.emailPackage(job.id, pkg.id, to)}
                 />
               ) : null}
               {!job && !startError ? (
@@ -336,7 +359,7 @@ export default function App() {
         ) : null}
 
         {tab === "manual" && meta ? <ManualImport meta={meta} onChanged={() => undefined} /> : null}
-        {tab === "integrations" ? <IntegrationsPanel /> : null}
+        {tab === "integrations" ? <IntegrationsPanel mode={mode} onModeChange={setMode} /> : null}
       </main>
 
       <footer className="app-footer">

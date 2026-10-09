@@ -1,7 +1,9 @@
-import type { TripPackage } from "../types";
+import { useState } from "react";
+import type { MailStatus, TripPackage } from "../types";
 import { fmtMoney, localDate, money } from "../format";
-import { BathroomBadge, OriginBadge, Pass, Score } from "./Badges";
+import { BathroomBadge, Pass, Score } from "./Badges";
 import { CostTable } from "./CostTable";
+import { SendMail } from "./SendMail";
 
 type Props = {
   pkg: TripPackage;
@@ -11,9 +13,13 @@ type Props = {
   compareChecked?: boolean;
   onCompare?: (checked: boolean) => void;
   compareDisabled?: boolean;
+  mail?: MailStatus | null;
+  onSendMail?: (to: string) => Promise<{ to: string }>;
 };
 
-export function TripCard({ pkg, onItinerary, onSave, saveState = "idle", compareChecked, onCompare, compareDisabled }: Props) {
+export function TripCard(props: Props) {
+  const { pkg, onItinerary, onSave, saveState = "idle", compareChecked, onCompare, compareDisabled, mail, onSendMail } = props;
+  const [mailOpen, setMailOpen] = useState(false);
   const f = pkg.flight;
   const o = pkg.accommodation.offer;
   const cur = pkg.cost.currency;
@@ -30,18 +36,13 @@ export function TripCard({ pkg, onItinerary, onSave, saveState = "idle", compare
               {localDate(f.outbound.departure_local)} – {localDate(f.inbound.departure_local)} · {pkg.usable_time.nights} noći ·{" "}
               {pkg.usable_time.usable_hours.toFixed(0)} h za obilazak
             </div>
-            <div className="row" style={{ marginTop: 6, gap: 14 }}>
-              {pkg.data_origins.map((d) => (
-                <OriginBadge key={d} origin={d} />
-              ))}
-              {pkg.cost.is_complete ? (
-                <span className="badge ok">Sve cene poznate</span>
-              ) : (
+            {!pkg.cost.is_complete ? (
+              <div className="row" style={{ marginTop: 6 }}>
                 <span className="badge bad" title={pkg.cost.unknown_items.join("; ")}>
                   Deo cene nepoznat
                 </span>
-              )}
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="price-block">
@@ -138,7 +139,12 @@ export function TripCard({ pkg, onItinerary, onSave, saveState = "idle", compare
       <footer className="trip-foot">
         {onSave ? (
           <button className="btn primary" onClick={onSave} disabled={saveState !== "idle"}>
-            {saveState === "saving" ? "Čuvam i pravim plan…" : saveState === "saved" ? "Sačuvano ✓" : "Sačuvaj putovanje"}
+            {saveState === "saving" ? "Čuvam…" : saveState === "saved" ? "Sačuvano ✓" : "Sačuvaj"}
+          </button>
+        ) : null}
+        {onSendMail ? (
+          <button className="btn" onClick={() => setMailOpen((v) => !v)} aria-expanded={mailOpen}>
+            Pošalji na mejl
           </button>
         ) : null}
         {onItinerary ? (
@@ -163,6 +169,11 @@ export function TripCard({ pkg, onItinerary, onSave, saveState = "idle", compare
           </label>
         ) : null}
       </footer>
+      {mailOpen && onSendMail ? (
+        <div className="trip-notes">
+          <SendMail mail={mail ?? null} onSend={onSendMail} onClose={() => setMailOpen(false)} />
+        </div>
+      ) : null}
     </article>
   );
 }

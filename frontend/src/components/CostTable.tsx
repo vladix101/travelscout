@@ -57,13 +57,10 @@ export function CostTable({ cost }: { cost: CostBreakdown }) {
       ) : null}
       {cost.fx_rates.length > 0 ? (
         <div className="tiny muted">
-          Kursevi:{" "}
-          {cost.fx_rates.map((r) => (
-            <span key={r.quote}>
-              1 EUR = {Number(r.rate).toLocaleString("sr-Latn-RS", { maximumFractionDigits: 4 })} {r.quote} ({r.source}, {r.as_of}
-              {r.is_fallback ? ", REZERVNI KURS" : ""}){" "}
-            </span>
-          ))}
+          Kurs:{" "}
+          {cost.fx_rates
+            .map((r) => `1 EUR = ${Number(r.rate).toLocaleString("sr-Latn-RS", { maximumFractionDigits: 2 })} ${r.quote} (${r.as_of})`)
+            .join(" · ")}
         </div>
       ) : null}
     </div>

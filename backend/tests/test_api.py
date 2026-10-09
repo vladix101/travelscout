@@ -100,6 +100,8 @@ def test_demo_search_end_to_end(client):
     # e-mail is not configured in tests -> clear 400, nothing is sent
     r = client.post(f"/api/trips/{trip['id']}/email", json={})
     assert r.status_code == 400 and "GOOGLE_APP_PASSWORD" in r.json()["detail"]
+    r = client.post(f"/api/searches/{job['id']}/packages/{pkg['id']}/email", json={"to": "me@example.com"})
+    assert r.status_code == 400 and "GOOGLE_APP_PASSWORD" in r.json()["detail"]
     client.delete(f"/api/trips/{trip['id']}")
     assert client.get("/api/trips").json() == []
 

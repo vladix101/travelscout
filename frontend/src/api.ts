@@ -82,6 +82,8 @@ export const api = {
     post<SavedTrip>("/api/trips", { job_id: jobId, package_id: pkgId, note: note || null, include_itinerary: true }),
   deleteTrip: (id: string) => del(`/api/trips/${id}`),
   tripExportUrl: (id: string, format: "md" | "json") => `/api/trips/${id}/export?format=${format}`,
+  emailPackage: (jobId: string, pkgId: string, to: string) =>
+    post<{ ok: boolean; to: string }>(`/api/searches/${jobId}/packages/${encodeURIComponent(pkgId)}/email`, { to: to || null }),
   mailStatus: () => request<MailStatus>("/api/mail/status"),
   emailTrip: (id: string, to: string) => post<{ ok: boolean; to: string }>(`/api/trips/${id}/email`, { to: to || null }),
   manual: () => request<ManualRecord[]>("/api/manual"),
