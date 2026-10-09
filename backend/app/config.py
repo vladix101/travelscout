@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import Field, SecretStr
@@ -46,7 +47,7 @@ class Settings(BaseSettings):
     # --- Live providers (opt-in; see docs/PROVIDERS.md) -----------------------------------
     wizz_live_enabled: bool = False
     booking_scraper_enabled: bool = False
-    booking_headless: bool = False
+    booking_window: Literal["offscreen", "visible", "headless"] = "offscreen"
     osm_enabled: bool = True
     fx_live_enabled: bool = True
     contact_email: str = Field(default="", description="Optional contact sent in the OSM User-Agent.")

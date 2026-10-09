@@ -1,7 +1,10 @@
 """LangGraph search workflow.
 
-validate_request → discover_flights → shortlist_trips → (fan-out) search_accommodation
-→ validate_eligibility → calculate_totals → rank_packages
+validate_request → discover_flights → shortlist_trips → select_flights (human-in-the-loop interrupt)
+→ (fan-out) search_accommodation → validate_eligibility → calculate_totals → rank_packages
+
+In interactive mode the graph pauses after the flight search and shows every flight/date
+combination; accommodation is searched only for the flights the user picks.
 
 Arithmetic, filtering, dates, currency and ranking are plain Python. Agents are used for
 request interpretation (before the graph), flight-search orchestration and explanations.
@@ -17,8 +20,10 @@ from decimal import Decimal
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
+from langgraph.types import Send, interrupt
 
 from app.agents.accommodation_agent import TripAccommodation, explain_packages, search_for_trip
 from app.agents.context import RunDeps
@@ -40,6 +45,7 @@ from app.services.ranking import rank_packages
 from app.services.timeplan import stay_dates, usable_time
 
 MAX_PER_DESTINATION = 2
+MAX_FLIGHT_CHOICES = 80
 MAX_NEEDS_VERIFICATION = 30
 
 
@@ -48,6 +54,7 @@ class SearchState(TypedDict, total=False):
     flight_options: list[FlightOption]
     destinations: dict[str, DestinationInfo]
     shortlist: list[FlightOption]
+    flight_choices: list[FlightOption]
     accommodation_results: Annotated[list[TripAccommodation], operator.add]
     selections: dict[str, AssessedOffer]
     needs_verification: list[AssessedOffer]
@@ -147,8 +154,26 @@ async def shortlist_trips(state: SearchState, config: RunnableConfig) -> dict[st
                 message="Kombinacije letova čija sama cena prelazi budžet su isključene.",
             )
         )
+    # Every combination within the constraints, grouped by destination then by date, for the user to pick from.
+    choices = sorted(
+        [o for opts in by_dest.values() for o in opts],
+        key=lambda o: (o.outbound.destination, o.outbound.departure_local, o.inbound.departure_local),
+    )[:MAX_FLIGHT_CHOICES]
     await deps.emit("shortlist", f"Uži izbor: {len(shortlist)} putovanja (limit {deps.settings.max_shortlist})", "done")
-    return {"shortlist": shortlist, "diagnostics": diags}
+    return {"shortlist": shortlist, "flight_choices": choices, "diagnostics": diags}
+
+
+async def select_flights(state: SearchState, config: RunnableConfig) -> dict[str, Any]:
+    """Human-in-the-loop: pause and let the user choose which flights get an accommodation search."""
+    deps = _deps(config)
+    if not config["configurable"].get("interactive") or state.get("stop") or not state.get("flight_choices"):
+        return {}
+    await deps.emit("select", "Izaberite letove za koje tražimo smeštaj", "done")
+    picked = interrupt({"kind": "select_flights", "max": deps.settings.max_shortlist})
+    by_id = {o.id: o for o in state.get("flight_choices", [])}
+    chosen = [by_id[i] for i in dict.fromkeys(picked or []) if i in by_id][: deps.settings.max_shortlist]
+    await deps.emit("select", f"Izabrano letova: {len(chosen)}", "done")
+    return {"shortlist": chosen}
 
 
 def fan_out_accommodation(state: SearchState) -> list[Send] | str:
@@ -335,11 +360,12 @@ def build_suggestions(state: SearchState, ranked: list[TripPackage]) -> list[str
     return s
 
 
-def build_search_graph() -> Any:
+def build_search_graph(checkpointer: InMemorySaver | None = None) -> Any:
     g = StateGraph(SearchState)
     g.add_node("validate_request", validate_request)
     g.add_node("discover_flights", discover_flights_node)
     g.add_node("shortlist_trips", shortlist_trips)
+    g.add_node("select_flights", select_flights)
     g.add_node("search_accommodation", search_accommodation)
     g.add_node("validate_eligibility", validate_eligibility)
     g.add_node("calculate_totals", calculate_totals)
@@ -348,12 +374,40 @@ def build_search_graph() -> Any:
     g.add_edge(START, "validate_request")
     g.add_conditional_edges("validate_request", after_validate, ["discover_flights", "rank_packages"])
     g.add_edge("discover_flights", "shortlist_trips")
-    g.add_conditional_edges("shortlist_trips", fan_out_accommodation, ["search_accommodation", "rank_packages"])
+    g.add_edge("shortlist_trips", "select_flights")
+    g.add_conditional_edges("select_flights", fan_out_accommodation, ["search_accommodation", "rank_packages"])
     g.add_edge("search_accommodation", "validate_eligibility")
     g.add_edge("validate_eligibility", "calculate_totals")
     g.add_edge("calculate_totals", "rank_packages")
     g.add_edge("rank_packages", END)
-    return g.compile()
+    return g.compile(checkpointer=checkpointer)
 
 
+# Automatic (no pause) graph, used by tests and scripted runs.
 SEARCH_GRAPH = build_search_graph()
+
+
+# Interactive graph: checkpoints let a paused search resume after the user picks flights.
+def _checkpoint_types() -> list[tuple[str, str]]:
+    """Explicit allowlist of our own types that may be restored from checkpoints."""
+    import enum
+
+    from pydantic import BaseModel
+
+    from app.domain import models
+
+    allowed = [
+        (models.__name__, name)
+        for name, obj in vars(models).items()
+        if isinstance(obj, type) and issubclass(obj, (BaseModel, enum.Enum)) and obj.__module__ == models.__name__
+    ]
+    return [
+        *allowed,
+        (DestinationInfo.__module__, "DestinationInfo"),
+        (TripAccommodation.__module__, "TripAccommodation"),
+    ]
+
+
+INTERACTIVE_SEARCH_GRAPH = build_search_graph(
+    InMemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=_checkpoint_types()))
+)

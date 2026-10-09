@@ -9,6 +9,7 @@ import { ItineraryView } from "./components/ItineraryView";
 import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { ManualImport } from "./components/ManualImport";
 import { FavoritesView, SavedSearchesView } from "./components/Library";
+import { FlightChoices } from "./components/FlightChoices";
 
 type Tab = "search" | "favorites" | "saved" | "manual" | "integrations";
 const TABS: [Tab, string][] = [
@@ -52,6 +53,9 @@ export default function App() {
   const [itinerary, setItinerary] = useState<{ jobId: string; pkg: TripPackage } | null>(null);
   const [comparing, setComparing] = useState<TripPackage[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [interpretedText, setInterpretedText] = useState("");
+  const [nlText, setNlText] = useState("");
+  const [selecting, setSelecting] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const flash = (msg: string) => {
@@ -76,6 +80,7 @@ export default function App() {
         const j = await api.job(jobId);
         setJob(j);
         if (!["queued", "running"].includes(j.status)) stopPolling();
+        if (j.status !== "awaiting_selection") setSelecting(false);
       } catch (e) {
         setStartError((e as Error).message);
         stopPolling();
@@ -100,7 +105,26 @@ export default function App() {
     return stopPolling;
   }, [loadLibrary, poll]);
 
-  const runSearch = async (c: SearchConstraints, m: "demo" | "live") => {
+  const interpret = async (base: SearchConstraints, text: string): Promise<SearchConstraints> => {
+    const r = await api.interpret(base, text);
+    setConstraints(r.constraints);
+    setNotes(r.notes.length ? r.notes : [{ field: "text", message: "Tekst nije promenio nijedno polje.", severity: "info" }]);
+    setFormKey((k) => k + 1);
+    setInterpretedText(text.trim());
+    return r.constraints;
+  };
+
+  const runSearch = async (base: SearchConstraints, m: "demo" | "live", text = "") => {
+    let c = base;
+    // The natural-language request always wins over stale form values: interpret it before searching.
+    if (text.trim() && meta?.llm_available && text.trim() !== interpretedText) {
+      try {
+        c = await interpret(base, text);
+      } catch (e) {
+        setStartError(`Tumačenje teksta nije uspelo: ${(e as Error).message}`);
+        return;
+      }
+    }
     const errors = validateConstraints(c);
     if (errors.length) {
       setStartError(errors.join(" "));
@@ -175,6 +199,8 @@ export default function App() {
               {meta && constraints ? (
                 <SearchForm
                   key={formKey}
+                  text={nlText}
+                  onTextChange={setNlText}
                   meta={meta}
                   value={constraints}
                   onChange={setConstraints}
@@ -182,13 +208,10 @@ export default function App() {
                   onModeChange={setMode}
                   busy={running}
                   interpretNotes={notes}
-                  onSearch={() => runSearch(constraints, mode)}
+                  onSearch={(text) => runSearch(constraints, mode, text)}
                   onInterpret={async (text) => {
                     try {
-                      const r = await api.interpret(constraints, text);
-                      setConstraints(r.constraints);
-                      setNotes(r.notes.length ? r.notes : [{ field: "text", message: "Tekst nije promenio nijedno polje.", severity: "info" }]);
-                      setFormKey((k) => k + 1);
+                      await interpret(constraints, text);
                     } catch (e) {
                       setNotes([{ field: "text", message: (e as Error).message, severity: "warning" }]);
                     }
@@ -219,7 +242,25 @@ export default function App() {
                   }}
                 />
               ) : null}
-              {job?.result ? (
+              {job?.status === "awaiting_selection" && job.result && meta ? (
+                <FlightChoices
+                  key={job.id}
+                  result={job.result}
+                  maxSelect={meta.max_shortlist}
+                  busy={selecting}
+                  onConfirm={async (ids) => {
+                    setSelecting(true);
+                    try {
+                      await api.selectFlights(job.id, ids);
+                      poll(job.id);
+                    } catch (e) {
+                      setStartError((e as Error).message);
+                      setSelecting(false);
+                    }
+                  }}
+                />
+              ) : null}
+              {job?.result && job.status !== "awaiting_selection" ? (
                 <Results
                   key={job.id}
                   result={job.result}

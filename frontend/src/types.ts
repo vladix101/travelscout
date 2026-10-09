@@ -188,6 +188,8 @@ export type SearchResult = {
   mode: "demo" | "live";
   packages: TripPackage[];
   flight_shortlist: FlightOption[];
+  flight_choices: FlightOption[];
+  awaiting_selection: boolean;
   destination_cities: Record<string, string>;
   needs_verification: AssessedOffer[];
   rejected_counts: Record<string, number>;
@@ -210,7 +212,7 @@ export type ProgressEvent = {
   at: string;
 };
 
-export type JobStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled";
+export type JobStatus = "queued" | "running" | "awaiting_selection" | "done" | "partial" | "failed" | "cancelled";
 
 export type Job = {
   id: string;

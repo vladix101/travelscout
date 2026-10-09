@@ -62,8 +62,22 @@ def test_invalid_constraints_are_rejected(client):
 
 def test_demo_search_end_to_end(client):
     r = client.post("/api/searches", json={"constraints": constraints(), "mode": "demo"})
-    job = wait_for(client, r.json()["job_id"])
+    job_id = r.json()["job_id"]
+    job = wait_for(client, job_id)
+    # Phase 1: flights only; the workflow pauses with every flight/date combination.
+    assert job["status"] == "awaiting_selection", job
+    choices = job["result"]["flight_choices"]
+    assert choices and job["result"]["awaiting_selection"] and job["result"]["packages"] == []
+    combos = {
+        (c["outbound"]["destination"], c["outbound"]["departure_local"], c["inbound"]["departure_local"])
+        for c in choices
+    }
+    assert len(combos) == len(choices)  # every option is a distinct destination/date combination
+    assert client.post(f"/api/searches/{job_id}/select", json={"flight_ids": [choices[0]["id"]]}).json()
+    # Phase 2: accommodation only for the chosen flight.
+    job = wait_for(client, job_id)
     assert job["status"] == "done", job
+    assert {p["flight"]["id"] for p in job["result"]["packages"]} <= {choices[0]["id"]}
     result = job["result"]
     assert result["mode"] == "demo" and result["packages"]
     assert all(p["data_origins"] == ["demo"] for p in result["packages"])
@@ -82,6 +96,16 @@ def test_demo_search_end_to_end(client):
     assert client.get("/api/favorites").json()[0]["id"] == fav["id"]
     client.delete(f"/api/favorites/{fav['id']}")
     assert client.get("/api/favorites").json() == []
+
+
+def test_select_is_rejected_when_not_waiting(client):
+    assert client.post("/api/searches/unknown/select", json={"flight_ids": ["x"]}).status_code == 409
+
+
+def test_automatic_mode_skips_selection(client):
+    r = client.post("/api/searches", json={"constraints": constraints(), "mode": "demo", "select_flights": False})
+    job = wait_for(client, r.json()["job_id"])
+    assert job["status"] == "done" and job["result"]["packages"]
 
 
 def test_live_search_without_providers_reports_instead_of_inventing(client):

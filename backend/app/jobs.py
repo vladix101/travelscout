@@ -7,12 +7,14 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from langgraph.types import Command
+
 from app.agents.context import ProgressEvent, RunDeps
 from app.agents.llm import get_chat_model
 from app.config import Settings
 from app.db import Database
 from app.domain.models import ProviderRunStatus, SearchConstraints, SearchResult
-from app.graph.workflow import SEARCH_GRAPH, SearchState, build_suggestions
+from app.graph.workflow import INTERACTIVE_SEARCH_GRAPH, SEARCH_GRAPH, SearchState, build_suggestions
 from app.providers.base import AccommodationProvider, FlightProvider
 from app.providers.booking import BookingBrowserProvider
 from app.providers.demo import DemoAccommodationProvider, DemoFlightProvider
@@ -64,7 +66,7 @@ async def build_deps(settings: Settings, db: Database, mode: Mode, on_progress: 
         stays.append(
             BookingBrowserProvider(
                 db,
-                headless=settings.booking_headless,
+                window=settings.booking_window,
                 max_properties=settings.max_properties_per_destination,
                 cache_ttl=settings.cache_ttl_minutes * 60,
                 concurrency=settings.booking_concurrency,
@@ -77,18 +79,22 @@ async def build_deps(settings: Settings, db: Database, mode: Mode, on_progress: 
 
 
 def assemble_result(
-    state: SearchState, constraints: SearchConstraints, deps: RunDeps, *, partial: bool
+    state: SearchState, constraints: SearchConstraints, deps: RunDeps, *, partial: bool, awaiting: bool = False
 ) -> SearchResult:
     return SearchResult(
         constraints=constraints,
         mode=deps.mode,
         packages=state.get("packages", []),
         flight_shortlist=state.get("shortlist", []),
+        flight_choices=state.get("flight_choices", []),
+        awaiting_selection=awaiting,
         destination_cities={k: (d.city or d.name) for k, d in state.get("destinations", {}).items()},
         needs_verification=state.get("needs_verification", []),
         rejected_counts=state.get("rejected_counts", {}),
         diagnostics=state.get("diagnostics", []),
-        suggestions=state.get("suggestions") or build_suggestions(state, state.get("packages", [])),
+        suggestions=[]
+        if awaiting
+        else (state.get("suggestions") or build_suggestions(state, state.get("packages", []))),
         provider_status=aggregate_status(deps.provider_status),
         agent_notes=state.get("agent_notes", []),
         used_llm=bool(state.get("used_llm")),
@@ -132,17 +138,27 @@ def aggregate_status(items: list[ProviderRunStatus]) -> list[ProviderRunStatus]:
 
 
 class JobManager:
+    """Runs searches in the background.
+
+    Interactive searches run in two phases on a checkpointed LangGraph thread (thread_id = job id):
+    1. flights -> the graph pauses (`interrupt`) with every flight/date option -> status "awaiting_selection";
+    2. after the user picks flights (`select`) the graph resumes with accommodation search and ranking.
+    """
+
     def __init__(self, settings: Settings, db: Database):
         self.settings = settings
         self.db = db
         self.tasks: dict[str, asyncio.Task[None]] = {}
         self.progress: dict[str, list[dict[str, Any]]] = {}
+        self.deps: dict[str, RunDeps] = {}
+        self.meta: dict[str, tuple[SearchConstraints, bool]] = {}
         self.last_provider_status: list[dict[str, Any]] = []
 
-    async def start(self, constraints: SearchConstraints, mode: Mode) -> str:
+    async def start(self, constraints: SearchConstraints, mode: Mode, interactive: bool = True) -> str:
         job_id = await self.db.create_job(mode, constraints.model_dump(mode="json"))
         self.progress[job_id] = []
-        self.tasks[job_id] = asyncio.create_task(self._run(job_id, constraints, mode))
+        self.meta[job_id] = (constraints, interactive)
+        self.tasks[job_id] = asyncio.create_task(self._start(job_id, constraints, mode))
         return job_id
 
     async def cancel(self, job_id: str) -> bool:
@@ -150,9 +166,27 @@ class JobManager:
         if task and not task.done():
             task.cancel()
             return True
+        job = await self.db.get_job(job_id)
+        if job and job["status"] == "awaiting_selection":
+            await self.db.update_job(job_id, status="cancelled", error="Pretraga je otkazana.")
+            self._forget(job_id)
+            return True
         return False
 
-    async def _run(self, job_id: str, constraints: SearchConstraints, mode: Mode) -> None:
+    async def select(self, job_id: str, flight_ids: list[str]) -> bool:
+        job = await self.db.get_job(job_id)
+        if not job or job["status"] != "awaiting_selection" or job_id not in self.deps:
+            return False
+        await self.db.update_job(job_id, status="running")
+        self.tasks[job_id] = asyncio.create_task(self._phase(job_id, Command(resume=flight_ids)))
+        return True
+
+    def _forget(self, job_id: str) -> None:
+        self.deps.pop(job_id, None)
+        self.meta.pop(job_id, None)
+        self.tasks.pop(job_id, None)
+
+    async def _start(self, job_id: str, constraints: SearchConstraints, mode: Mode) -> None:
         progress = self.progress[job_id]
 
         async def on_progress(ev: ProgressEvent) -> None:
@@ -161,20 +195,32 @@ class JobManager:
 
         await self.db.update_job(job_id, status="running")
         deps = await build_deps(self.settings, self.db, mode, on_progress)
+        self.deps[job_id] = deps
         if mode == "demo":
             await deps.emit("start", "DEMO režim: koriste se izmišljeni podaci, ne stvarne ponude", "warning")
         if deps.llm is None:
             await deps.emit("start", "OpenAI ključ nije podešen – agenti rade po pravilima", "warning")
+        await self._phase(job_id, {"constraints": constraints})
+
+    async def _phase(self, job_id: str, graph_input: Any) -> None:
+        constraints, interactive = self.meta[job_id]
+        deps = self.deps[job_id]
+        progress = self.progress[job_id]
+        graph = INTERACTIVE_SEARCH_GRAPH if interactive else SEARCH_GRAPH
+        config: dict[str, Any] = {
+            "configurable": {"deps": deps, "interactive": interactive, "thread_id": job_id},
+            "recursion_limit": 40,
+        }
         last_state: SearchState = {"constraints": constraints}
-        status, error = "done", None
+        status, error, awaiting = "done", None, False
         try:
             async with asyncio.timeout(self.settings.max_job_seconds):
-                async for chunk in SEARCH_GRAPH.astream(
-                    {"constraints": constraints},
-                    config={"configurable": {"deps": deps}, "recursion_limit": 40},
-                    stream_mode="values",
-                ):
+                async for chunk in graph.astream(graph_input, config=config, stream_mode="values"):
                     last_state = chunk  # type: ignore[assignment]
+            if interactive:
+                snapshot = await graph.aget_state(config)
+                awaiting = "select_flights" in snapshot.next
+                last_state = snapshot.values or last_state  # type: ignore[assignment]
         except TimeoutError:
             status, error = "partial", "Isteklo je maksimalno vreme izvršavanja; prikazani su delimični rezultati."
             await deps.emit("end", error, "warning")
@@ -185,8 +231,10 @@ class JobManager:
             log.exception("search job failed")
             status, error = "failed", redact(f"Greška u radu: {type(exc).__name__}: {exc}")[:300]
             progress.append(ProgressEvent(stage="end", message=error, status="error").as_dict())
-        result = assemble_result(last_state, constraints, deps, partial=status != "done")
-        if status == "done" and any(s.status in ("failed", "partial") for s in result.provider_status):
+        result = assemble_result(last_state, constraints, deps, partial=status != "done", awaiting=awaiting)
+        if awaiting and status == "done":
+            status = "awaiting_selection"
+        elif status == "done" and any(s.status in ("failed", "partial") for s in result.provider_status):
             status = "partial"
         if status in ("done", "partial"):
             progress.append(ProgressEvent(stage="end", message="Pretraga završena", status="done").as_dict())
@@ -194,4 +242,7 @@ class JobManager:
         await self.db.update_job(
             job_id, status=status, progress=progress, result=result.model_dump(mode="json"), error=error
         )
-        self.tasks.pop(job_id, None)
+        if status == "awaiting_selection":
+            self.tasks.pop(job_id, None)
+        else:
+            self._forget(job_id)

@@ -426,6 +426,8 @@ class SearchResult(StrictModel):
     mode: Literal["demo", "live"]
     packages: list[TripPackage]
     flight_shortlist: list[FlightOption] = Field(default_factory=list)
+    flight_choices: list[FlightOption] = Field(default_factory=list)
+    awaiting_selection: bool = False
     destination_cities: dict[str, str] = Field(default_factory=dict)
     needs_verification: list[AssessedOffer]
     rejected_counts: dict[str, int]

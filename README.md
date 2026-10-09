@@ -16,6 +16,7 @@ The UI is in Serbian (Latin script) and shows prices in EUR by default (RSD opti
 
 ## Features
 
+- Two-step search: first every Wizz Air date combination (e.g. 3–7 Nov and 3–8 Nov), then accommodation only for the flights you pick (LangGraph human-in-the-loop `interrupt`).
 - Search form plus optional natural-language request ("Vikend u Rimu za dvoje u novembru…"), interpreted by the **Travel Coordinator** agent. The interpreted constraints are shown so you can correct them.
 - Flexible date windows, *Anywhere* discovery, several departure airports (BEG default; INI, TZL, SKP, TSR, BUD, SOF, TGD).
 - Strict accommodation rules. Anything that cannot be proven goes to a separate **Needs verification** list.
@@ -33,7 +34,7 @@ The UI is in Serbian (Latin script) and shows prices in EUR by default (RSD opti
 | OpenAI | **Required for agents** | Default model `gpt-4o-mini` (low cost) (override with `OPENAI_MODEL`). |
 | DEMO dataset | Always available | Fictional data (every property name starts with "DEMO") that exercises every rule. Never mixed with live data. |
 | Wizz Air (public site endpoints) | Opt-in `WIZZ_LIVE_ENABLED=true` | No official API exists. Reads the public route map and lowest-fare calendar. Flight numbers, arrival times and bag prices are bot-protected and **not** bypassed, so arrivals are estimates and bag prices are "unknown". |
-| Booking.com (visible browser) | Opt-in `BOOKING_SCRAPER_ENABLED=true` | The Demand API needs an affiliate contract. A visible Playwright Chromium window reads the exact-date property pages. No CAPTCHA solving, stealth or proxies. |
+| Booking.com (browser) | Opt-in `BOOKING_SCRAPER_ENABLED=true` | The Demand API needs an affiliate contract. A Playwright Chromium (window off-screen by default) reads the exact-date property pages. No CAPTCHA solving, stealth or proxies. |
 | OpenStreetMap (Nominatim + Overpass) | On by default | Attractions, coordinates, `opening_hours`/`fee` tags. Community data: verify before you go. |
 | ECB (Frankfurter) + NBS (kurs.resenje.org) | On by default | FX rates. Fallback rates are clearly flagged. |
 | Manual import | Always available | Paste or type offers you found yourself; labelled "Ručni unos". |
@@ -53,8 +54,9 @@ flowchart LR
     API --> G
     subgraph G[LangGraph search workflow]
         V[validate] --> F[discover flights<br/>Flight Agent + tools]
-        F --> S[shortlist]
-        S -->|Send fan-out| A[search accommodation<br/>per trip & exact dates]
+        F --> S[flight options]
+        S --> P{{you pick flights<br/>interrupt}}
+        P -->|Send fan-out| A[search accommodation<br/>per trip & exact dates]
         A --> E[eligibility rules]
         E --> C[totals]
         C --> R[rank + explain]
@@ -127,16 +129,16 @@ macOS/Linux: same steps with `.venv/bin/python`.
 
 ### Try it
 
-1. Leave **Demo podaci** selected and click **Pronađi putovanja**. The full workflow runs on fictional data.
-2. Type a request such as *"Rim ili Barselona za dvoje u novembru, 3–4 noći, do 450 € po osobi"* and click **Protumači**.
+1. Leave **Demo podaci** selected and click **Pronađi letove**, then **Traži smeštaj za izabrane letove**. The full workflow runs on fictional data.
+2. Type a request such as *"Malta početkom novembra, 4 do 5 noći, nas dvoje"*. It is applied automatically when you search (or click **Protumači** to review it first).
 3. Open **Plan putovanja** on a card, tick **Uporedi** on two or three cards, or export Markdown/JSON.
-4. For real data, set `WIZZ_LIVE_ENABLED=true` and `BOOKING_SCRAPER_ENABLED=true`, restart the backend, and choose **Stvarni podaci**. A Chromium window opens for each Booking.com search; don't close it. A 2-destination search took about 1 minute in testing.
+4. For real data, set `WIZZ_LIVE_ENABLED=true` and `BOOKING_SCRAPER_ENABLED=true`, restart the backend, and choose **Stvarni podaci**. Pick flights in step 1; accommodation for three Malta date options took about 30 s in testing (Chromium runs off-screen).
 
 ## Tests and checks
 
 ```powershell
 cd backend
-.\.venv\Scripts\python -m pytest -q            # 114 tests, fixtures only, no network
+.\.venv\Scripts\python -m pytest -q            # 118 tests, fixtures only, no network
 .\.venv\Scripts\ruff check app tests
 .\.venv\Scripts\mypy app
 .\.venv\Scripts\python -m pytest -m live -q    # optional: real OpenAI call (uses your key, costs a little)

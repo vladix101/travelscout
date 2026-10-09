@@ -78,7 +78,7 @@ def build_round_trips(
     child_note: str | None = None,
     fare_is_confirmed_quote: bool = False,
     included_baggage: str = WIZZ_INCLUDED_BAGGAGE,
-    limit: int = 6,
+    limit: int = 30,
 ) -> list[FlightOption]:
     seats = constraints.party.seated_passengers
     combos: list[tuple[Decimal, FlightOption]] = []

@@ -1,12 +1,14 @@
-"""Booking.com accommodation via a real, visible Chromium window (Playwright).
+"""Booking.com accommodation via a real Chromium browser (Playwright).
 
 Booking.com's Demand API requires a signed Managed Affiliate Partner contract, so with
 `BOOKING_SCRAPER_ENABLED=true` this provider opens booking.com pages the way a person would,
 for private, low-volume use. Constraints we keep on purpose:
 
 * no stealth plugins, fingerprint spoofing, proxy rotation or CAPTCHA solving;
-* if Booking.com shows a CAPTCHA, a visible window waits for *you* to solve it, a headless
-  run fails with a clear "blocked" status;
+* the browser is a normal (non-headless) Chromium whose window is placed off-screen by default,
+  so nothing pops up; Booking.com rejects headless browsers and we do not try to disguise one;
+* if Booking.com shows a CAPTCHA, a *visible* window (BOOKING_WINDOW=visible) waits for you to
+  solve it; off-screen/headless runs stop with a clear "blocked" status;
 * small volume: one search page + a few property pages per destination, cached.
 
 Booking.com's markup changes frequently, so parsing can break; failures surface as provider
@@ -21,6 +23,7 @@ import re
 import time
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Literal
 from urllib.parse import urlencode
 
 from app.db import Database
@@ -49,6 +52,8 @@ log = logging.getLogger(__name__)
 # Property types requested from Booking.com: apartments, hotels, B&Bs, guest houses, holiday homes.
 TYPE_FILTER = ["ht_id=201", "ht_id=204", "ht_id=208", "ht_id=216", "ht_id=220"]
 HUMAN_CAPTCHA_WAIT_S = 90
+WindowMode = Literal["offscreen", "visible", "headless"]
+OFFSCREEN_ARGS = ["--window-position=-32000,-32000", "--window-size=1280,900"]
 
 
 def booking_search_url(
@@ -95,14 +100,14 @@ class BookingBrowserProvider:
         self,
         db: Database | None,
         *,
-        headless: bool,
+        window: WindowMode = "offscreen",
         max_properties: int,
         timeout_s: float = 45,
         cache_ttl: int = 3 * 3600,
         concurrency: int = 2,
     ):
         self.db = db
-        self.headless = headless
+        self.window = window
         self.max_properties = max_properties
         self.timeout_ms = int(timeout_s * 1000)
         self.cache_ttl = cache_ttl
@@ -152,7 +157,10 @@ class BookingBrowserProvider:
         assert_url_allowed(url)
         try:
             with sync_playwright() as pw:
-                browser = pw.chromium.launch(headless=self.headless)
+                browser = pw.chromium.launch(
+                    headless=self.window == "headless",
+                    args=OFFSCREEN_ARGS if self.window == "offscreen" else [],
+                )
                 try:
                     ctx = browser.new_context(locale="en-GB", viewport={"width": 1280, "height": 900})
                     page = ctx.new_page()
@@ -162,6 +170,9 @@ class BookingBrowserProvider:
                     page.goto("https://www.booking.com/index.en-gb.html", wait_until="load")
                     page.wait_for_timeout(1500)
                     page.goto(url, wait_until="domcontentloaded")
+                    if "ss=" not in page.url:  # challenge redirect dropped the query: load the search again
+                        page.wait_for_timeout(1000)
+                        page.goto(url, wait_until="domcontentloaded")
                     html = self._wait_for(
                         page, '[data-testid="property-card"]', "No properties found", timeout_s=self.timeout_ms / 1000
                     )
@@ -201,8 +212,8 @@ class BookingBrowserProvider:
         timeout_s: float,  # type: ignore[no-untyped-def]
         required: bool = True,
     ) -> str:
-        """Wait for `selector`. If a CAPTCHA appears: headless -> fail; visible window -> give the
-        person in front of the screen HUMAN_CAPTCHA_WAIT_S seconds to solve it themselves."""
+        """Wait for `selector`. If a CAPTCHA appears: off-screen/headless -> fail; visible window -> give
+        the person in front of the screen HUMAN_CAPTCHA_WAIT_S seconds to solve it themselves."""
         deadline = time.monotonic() + timeout_s
         extended = False
         while time.monotonic() < deadline:
@@ -212,8 +223,11 @@ class BookingBrowserProvider:
             if empty_marker and empty_marker.lower() in html.lower():
                 return html
             if looks_like_captcha(html):
-                if self.headless:
-                    raise ProviderBlockedError("Booking.com traži CAPTCHA – automatska pretraga je zaustavljena.")
+                if self.window != "visible":
+                    raise ProviderBlockedError(
+                        "Booking.com traži CAPTCHA – pretraga je zaustavljena. Postavite BOOKING_WINDOW=visible "
+                        "u .env da biste je rešili ručno."
+                    )
                 if not extended:
                     log.warning("Booking.com CAPTCHA shown; waiting for the user to solve it in the window")
                     deadline += HUMAN_CAPTCHA_WAIT_S

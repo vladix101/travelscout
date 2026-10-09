@@ -218,12 +218,25 @@ async def interpret(body: InterpretBody, request: Request) -> InterpretedRequest
 class SearchBody(BaseModel):
     constraints: SearchConstraints
     mode: Literal["demo", "live"] = "demo"
+    # True: pause after the flight search so the user picks flights before accommodation is searched.
+    select_flights: bool = True
 
 
 @app.post("/api/searches")
 async def start_search(body: SearchBody, request: Request) -> dict[str, str]:
-    job_id = await request.app.state.jobs.start(body.constraints, body.mode)
+    job_id = await request.app.state.jobs.start(body.constraints, body.mode, body.select_flights)
     return {"job_id": job_id}
+
+
+class SelectBody(BaseModel):
+    flight_ids: list[str] = Field(min_length=1, max_length=15)
+
+
+@app.post("/api/searches/{job_id}/select")
+async def select_flights(job_id: str, body: SelectBody, request: Request) -> dict[str, bool]:
+    if not await request.app.state.jobs.select(job_id, body.flight_ids):
+        raise HTTPException(409, "Ova pretraga ne čeka izbor letova (završena, otkazana ili je server restartovan).")
+    return {"ok": True}
 
 
 @app.get("/api/searches/{job_id}")
@@ -232,7 +245,7 @@ async def get_search(job_id: str, request: Request) -> dict[str, Any]:
     if not job:
         raise HTTPException(404, "Pretraga nije pronađena")
     jobs: JobManager = request.app.state.jobs
-    if job_id in jobs.progress and job["status"] in ("queued", "running"):
+    if job_id in jobs.progress and job["status"] in ("queued", "running", "awaiting_selection"):
         job["progress"] = jobs.progress[job_id]
     return job
 

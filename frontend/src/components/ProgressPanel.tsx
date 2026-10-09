@@ -5,6 +5,7 @@ const STAGES: [string, string][] = [
   ["validate", "Provera"],
   ["flights", "Letovi"],
   ["shortlist", "Uži izbor"],
+  ["select", "Izbor letova"],
   ["accommodation", "Smeštaj"],
   ["eligibility", "Uslovi"],
   ["totals", "Troškovi"],
@@ -14,6 +15,7 @@ const STAGES: [string, string][] = [
 const STATUS_LABEL: Record<Job["status"], string> = {
   queued: "U redu čekanja",
   running: "U toku",
+  awaiting_selection: "Čeka vaš izbor letova",
   done: "Završeno",
   partial: "Delimični rezultati",
   failed: "Greška",
@@ -22,12 +24,13 @@ const STATUS_LABEL: Record<Job["status"], string> = {
 
 export function ProgressPanel({ job, onCancel }: { job: Job; onCancel: () => void }) {
   const seen = new Set(job.progress.map((e) => e.stage));
-  const finished = !["queued", "running"].includes(job.status);
+  const finished = !["queued", "running", "awaiting_selection"].includes(job.status);
+  const waiting = job.status === "awaiting_selection";
   const doneStages = new Set(job.progress.filter((e) => e.status === "done" || finished).map((e) => e.stage));
   const idx = STAGES.reduce((acc, [s], i) => (seen.has(s) ? i + 1 : acc), 0);
   const pct = finished ? 100 : Math.max(5, Math.round((idx / STAGES.length) * 100));
   const events = [...job.progress].reverse().slice(0, 40);
-  const tone = job.status === "failed" ? "bad" : job.status === "partial" || job.status === "cancelled" ? "warn" : finished ? "ok" : "neutral";
+  const tone = waiting ? "warn" : job.status === "failed" ? "bad" : job.status === "partial" || job.status === "cancelled" ? "warn" : finished ? "ok" : "neutral";
 
   return (
     <section className="card panel stack" aria-live="polite" aria-busy={!finished}>
@@ -54,7 +57,7 @@ export function ProgressPanel({ job, onCancel }: { job: Job; onCancel: () => voi
         ))}
       </div>
       {job.error ? <div className={`notice ${job.status === "failed" ? "bad" : "warn"} small`}>{job.error}</div> : null}
-      <details open={!finished}>
+      <details open={!finished && !waiting}>
         <summary>Dnevnik koraka ({job.progress.length})</summary>
         <ul className="progress-list">
           {events.map((e, i) => (

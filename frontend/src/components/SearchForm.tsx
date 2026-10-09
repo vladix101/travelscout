@@ -10,7 +10,9 @@ type Props = {
   onChange: (c: SearchConstraints) => void;
   mode: "demo" | "live";
   onModeChange: (m: "demo" | "live") => void;
-  onSearch: () => void;
+  onSearch: (text: string) => void;
+  text: string;
+  onTextChange: (t: string) => void;
   onInterpret: (text: string) => Promise<void>;
   onSave: (name: string) => Promise<void>;
   interpretNotes: InterpretationNote[] | null;
@@ -58,7 +60,8 @@ function NumberField(props: { label: string; value: number; min: number; max: nu
 
 export function SearchForm(p: Props) {
   const c = p.value;
-  const [text, setText] = useState("");
+  const text = p.text;
+  const setText = p.onTextChange;
   const [interpreting, setInterpreting] = useState(false);
   const [destText, setDestText] = useState(c.destinations.join(", "));
   const [touched, setTouched] = useState(false);
@@ -82,7 +85,7 @@ export function SearchForm(p: Props) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (errors.length === 0) p.onSearch();
+    if (errors.length === 0 || text.trim()) p.onSearch(text);
   };
 
   return (
@@ -99,7 +102,9 @@ export function SearchForm(p: Props) {
         </label>
         <div className="row spread">
           <span className="tiny muted">
-            {p.meta.llm_available ? "Travel Coordinator agent popunjava formu – proverite rezultat." : "Tumačenje teksta zahteva OPENAI_API_KEY."}
+            {p.meta.llm_available
+              ? "Tekst se automatski primenjuje i pri pretrazi; „Protumači“ samo popunjava formu da je proverite."
+              : "Tumačenje teksta zahteva OPENAI_API_KEY."}
           </span>
           <button
             type="button"
@@ -362,7 +367,7 @@ export function SearchForm(p: Props) {
           </div>
         ) : null}
         <button type="submit" className="btn primary block" disabled={p.busy}>
-          {p.busy ? "Pretraga u toku…" : "Pronađi putovanja"}
+          {p.busy ? "Pretraga u toku…" : "Pronađi letove"}
         </button>
         <button
           type="button"

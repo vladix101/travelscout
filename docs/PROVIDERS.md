@@ -30,7 +30,7 @@ These are undocumented endpoints. They may change or stop working at any time, a
 
 ## Booking.com details
 
-Plain HTTP requests receive an AWS WAF JavaScript challenge, and headless Chromium received an HTTP 502 during testing. A normal **visible** Chromium window (Playwright, no stealth plugins, no fingerprint spoofing, no proxies) loads results normally. Flow per shortlisted trip:
+Plain HTTP requests receive an AWS WAF JavaScript challenge, and headless Chromium is challenged on every request. A normal (non-headless) Chromium (Playwright, no stealth plugins, no fingerprint spoofing, no proxies) loads results normally. By default its window is placed off-screen (`BOOKING_WINDOW=offscreen`), so nothing pops up; `visible` shows it. Flow per selected trip:
 
 1. Open booking.com once (the JS challenge sets a session cookie).
 2. Search results for the city and exact dates, sorted by price, filtered to apartments, hotels, B&Bs, guest houses and holiday homes, review score 7+. Booking's own score filter is coarse (a 7.4 slipped through in testing), so the 7.5 rule is enforced in Python.
@@ -41,7 +41,7 @@ Plain HTTP requests receive an AWS WAF JavaScript challenge, and headless Chromi
    * the room table: **room-level** facilities ("Private bathroom", "Private external bathroom", "Ensuite bathroom", "Shared bathroom"), cancellation and prepayment text.
 4. Confirm that the page's check-in/check-out equal the requested dates.
 
-If a CAPTCHA appears, a visible window waits up to 90 s for the user to solve it; headless mode fails with a "blocked" status. Booking.com's markup changes often; parsing failures surface as provider errors, never as invented offers.
+If a CAPTCHA appears, `BOOKING_WINDOW=visible` waits up to 90 s for the user to solve it; off-screen and headless runs stop with a "blocked" status. Booking.com's markup changes often; parsing failures surface as provider errors, never as invented offers.
 
 ## What works with only an OpenAI key
 
@@ -53,7 +53,7 @@ If a CAPTCHA appears, a visible window waits up to 90 s for the user to solve it
 ## What needs opt-in configuration
 
 * `WIZZ_LIVE_ENABLED=true`: live Wizz Air fares (no extra credentials).
-* `BOOKING_SCRAPER_ENABLED=true` + `python -m playwright install chromium`: live Booking.com rooms.
+* `BOOKING_SCRAPER_ENABLED=true` + `python -m playwright install chromium`: live Booking.com rooms (browser window off-screen by default).
 
 ## What remains unavailable
 

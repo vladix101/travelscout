@@ -334,5 +334,5 @@ class WizzLiveProvider:
                 p.infants,
             ),
             child_note=CHILD_NOTE,
-            limit=6,
+            limit=30,
         )

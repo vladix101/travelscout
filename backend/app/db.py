@@ -141,7 +141,10 @@ class Database:
         }
 
     async def mark_stale_jobs(self) -> None:
-        await self.run("UPDATE jobs SET status='failed', error='server restarted' WHERE status IN ('queued','running')")
+        await self.run(
+            "UPDATE jobs SET status='failed', error='server restarted' "
+            "WHERE status IN ('queued','running','awaiting_selection')"
+        )
 
     # -- generic documents ------------------------------------------------------------------
     async def add_saved_search(self, name: str, constraints: dict[str, Any]) -> str:

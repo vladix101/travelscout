@@ -68,6 +68,7 @@ export const api = {
     post<{ job_id: string }>("/api/searches", { constraints, mode }),
   job: (id: string) => request<Job>(`/api/searches/${id}`),
   cancel: (id: string) => post<{ cancelled: boolean }>(`/api/searches/${id}/cancel`),
+  selectFlights: (id: string, flightIds: string[]) => post<{ ok: boolean }>(`/api/searches/${id}/select`, { flight_ids: flightIds }),
   itinerary: (jobId: string, pkgId: string) =>
     post<Itinerary>(`/api/searches/${jobId}/packages/${encodeURIComponent(pkgId)}/itinerary`),
   exportUrl: (jobId: string, pkgId: string, format: "md" | "json") =>
