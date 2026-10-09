@@ -30,7 +30,7 @@ The UI is in Serbian (Latin script) and shows prices in EUR by default (RSD opti
 
 | Source | Status | Notes |
 |---|---|---|
-| OpenAI | **Required for agents** | Default model `gpt-5.4-mini` (override with `OPENAI_MODEL`). |
+| OpenAI | **Required for agents** | Default model `gpt-4o-mini` (low cost) (override with `OPENAI_MODEL`). |
 | DEMO dataset | Always available | Fictional data (every property name starts with "DEMO") that exercises every rule. Never mixed with live data. |
 | Wizz Air (public site endpoints) | Opt-in `WIZZ_LIVE_ENABLED=true` | No official API exists. Reads the public route map and lowest-fare calendar. Flight numbers, arrival times and bag prices are bot-protected and **not** bypassed, so arrivals are estimates and bag prices are "unknown". |
 | Booking.com (visible browser) | Opt-in `BOOKING_SCRAPER_ENABLED=true` | The Demand API needs an affiliate contract. A visible Playwright Chromium window reads the exact-date property pages. No CAPTCHA solving, stealth or proxies. |

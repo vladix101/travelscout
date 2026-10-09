@@ -12,15 +12,29 @@ def get_chat_model(settings: Settings) -> BaseChatModel | None:
     """Return a configured model, or None when no OpenAI key is configured."""
     if not settings.llm_available or settings.openai_api_key is None:
         return None
+    model = settings.openai_model
+    if is_reasoning_model(model):
+        # Reasoning models (gpt-5.x, o-series) only support tools together with reasoning on the Responses API.
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.openai_api_key,
+            timeout=settings.openai_timeout_seconds,
+            max_retries=settings.openai_max_retries,
+            reasoning_effort="low",
+            use_responses_api=True,
+        )
     return ChatOpenAI(
-        model=settings.openai_model,
+        model=model,
         api_key=settings.openai_api_key,
         timeout=settings.openai_timeout_seconds,
         max_retries=settings.openai_max_retries,
-        reasoning_effort="low",
-        # gpt-5.x models only support tools together with reasoning on the Responses API.
-        use_responses_api=True,
+        temperature=0.2,
     )
+
+
+def is_reasoning_model(model: str) -> bool:
+    name = model.lower()
+    return name.startswith(("gpt-5", "o1", "o3", "o4")) and "chat" not in name
 
 
 UNTRUSTED_DATA_RULE = (

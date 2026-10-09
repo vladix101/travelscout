@@ -7,6 +7,7 @@ can correct it. Hard requirements (e.g. the 7.5 review-score floor) can never be
 
 from __future__ import annotations
 
+import copy
 import logging
 from datetime import date
 from decimal import Decimal
@@ -52,14 +53,15 @@ class CoordinatorDraft(BaseModel):
     pace: Literal["relaxed", "moderate", "intense"] | None = None
     max_distance_km: float | None = None
     min_review_score: float | None = None
-    ambiguities: list[str] = Field(default_factory=list, description="Things the user should confirm (Serbian)")
+    ambiguities: list[str] | None = Field(default=None, description="Things the user should confirm (Serbian)")
 
 
 SYSTEM_PROMPT = """Ti si Travel Coordinator agent aplikacije TravelScout.
 Zadatak: iz korisnikovog teksta izdvoji SAMO eksplicitno navedene ili jasno implicirane parametre pretrage.
 Pravila:
 - Danas je {today}. Relativne datume ("sledeći mesec", "za vikend") pretvori u konkretne YYYY-MM-DD datume.
-- Fleksibilan period: window_start/window_end su granice za datum POLASKA. Tačni datumi: departure_date/return_date.
+- Fleksibilan period: window_start/window_end su granice za datum POLASKA. date_mode="exact" koristi SAMO ako
+  korisnik navede i tačan datum polaska i tačan datum povratka; inače date_mode="flexible".
 - Gradove mapiraj na IATA kodove aerodroma koje Wizz Air koristi (npr. Rim->FCO, Pariz->BVA, London->LTN,
   Milano->BGY, Barselona->BCN). Svako mapiranje upiši u destination_mapping.
 - "Bilo gde"/"anywhere" => anywhere=true. Ako su navedene destinacije => anywhere=false.
@@ -98,47 +100,47 @@ FIELD_LABELS = {
 }
 
 
+def _draft_groups(d: dict[str, Any]) -> list[list[tuple[tuple[str, ...], str, Any]]]:
+    """Split proposed values into groups that must be applied (and validated) together."""
+    groups: list[list[tuple[tuple[str, ...], str, Any]]] = []
+
+    def grp(keys: tuple[str, ...], path: tuple[str, ...] = ()) -> None:
+        items = [(path, k, d[k]) for k in keys if k in d]
+        if items:
+            groups.append(items)
+
+    if "destinations" in d:
+        d["destinations"] = [v.upper() for v in d["destinations"]]
+        if d["destinations"] and "anywhere" not in d:
+            d["anywhere"] = False
+    if "origins" in d:
+        d["origins"] = [v.upper() for v in d["origins"]]
+    for key in ("budget_amount", "max_distance_km"):
+        if key in d:
+            d[key] = str(Decimal(str(d[key])))
+    grp(("origins",))
+    grp(("destinations", "anywhere"))
+    grp(("date_mode", "departure_date", "return_date", "window_start", "window_end"))
+    grp(("min_nights", "max_nights"))
+    grp(("budget_amount", "budget_scope", "budget_currency"))
+    grp(("direct_only",))
+    grp(("interests",))
+    grp(("pace",))
+    grp(("max_distance_km",))
+    grp(("adults", "children", "child_ages", "infants"), ("party",))
+    grp(("cabin_trolley_10kg", "checked_bags_20kg", "checked_bags_32kg"), ("baggage",))
+    return groups
+
+
 def merge_draft(base: SearchConstraints, draft: CoordinatorDraft) -> InterpretedRequest:
+    """Apply proposed values group by group; a group that fails validation is skipped (and reported),
+    so one bad value never discards the rest of the interpretation."""
     data: dict[str, Any] = base.model_dump(mode="json")
     notes: list[InterpretationNote] = []
     d = draft.model_dump(exclude_none=True)
 
-    def setf(path: list[str], key: str, value: Any) -> None:
-        target = data
-        for p in path:
-            target = target[p]
-        if target.get(key) != value:
-            target[key] = value
-            notes.append(InterpretationNote(field=key, message=f"{FIELD_LABELS.get(key, key)}: {value} (iz teksta)"))
-
-    for key in (
-        "origins",
-        "destinations",
-        "anywhere",
-        "date_mode",
-        "departure_date",
-        "return_date",
-        "window_start",
-        "window_end",
-        "min_nights",
-        "max_nights",
-        "budget_scope",
-        "budget_currency",
-        "direct_only",
-        "interests",
-        "pace",
-    ):
-        if key in d:
-            value = [v.upper() for v in d[key]] if key in ("origins", "destinations") else d[key]
-            setf([], key, value)
-    if "destinations" in d and d["destinations"] and "anywhere" not in d:
-        setf([], "anywhere", False)
-    if "budget_amount" in d:
-        setf([], "budget_amount", str(Decimal(str(d["budget_amount"]))))
-    if "max_distance_km" in d:
-        setf([], "max_distance_km", str(Decimal(str(d["max_distance_km"]))))
     if "min_review_score" in d:
-        requested = Decimal(str(d["min_review_score"]))
+        requested = Decimal(str(d.pop("min_review_score")))
         if requested < Decimal("7.5"):
             notes.append(
                 InterpretationNote(
@@ -147,32 +149,46 @@ def merge_draft(base: SearchConstraints, draft: CoordinatorDraft) -> Interpreted
                     message="Minimalna ocena 7.5 je obavezna i ne može se smanjiti.",
                 )
             )
-        else:
-            setf([], "min_review_score", str(requested))
-    for key in ("adults", "children", "child_ages", "infants"):
-        if key in d:
-            setf(["party"], key, d[key])
-    for key in ("cabin_trolley_10kg", "checked_bags_20kg", "checked_bags_32kg"):
-        if key in d:
-            setf(["baggage"], key, d[key])
-    for m in d.get("destination_mapping") or []:
-        notes.append(InterpretationNote(field="destinations", message=f"Mapiranje: {m}"))
-    for a in draft.ambiguities:
-        notes.append(InterpretationNote(field="text", message=a, severity="warning"))
+        elif requested != Decimal(str(data["min_review_score"])):
+            d["min_review_score_group"] = str(requested)
 
-    try:
-        constraints = SearchConstraints.model_validate(data)
-    except ValidationError as exc:
-        for err in exc.errors():
+    groups = _draft_groups(d)
+    if "min_review_score_group" in d:
+        groups.append([((), "min_review_score", d["min_review_score_group"])])
+
+    current = base
+    for group in groups:
+        trial = copy.deepcopy(data)
+        changed: list[tuple[str, Any]] = []
+        for path, key, value in group:
+            target = trial
+            for p in path:
+                target = target[p]
+            if target.get(key) != value:
+                target[key] = value
+                changed.append((key, value))
+        if not changed:
+            continue
+        try:
+            current = SearchConstraints.model_validate(trial)
+        except ValidationError as exc:
+            msg = exc.errors()[0]["msg"]
+            labels = ", ".join(FIELD_LABELS.get(k, k) for k, _ in changed)
             notes.append(
                 InterpretationNote(
-                    field=".".join(map(str, err["loc"])) or "constraints",
-                    message=f"Tumačenje nije primenjeno: {err['msg']}",
-                    severity="warning",
+                    field=changed[0][0], severity="warning", message=f"Nije primenjeno ({labels}): {msg}"
                 )
             )
-        return InterpretedRequest(constraints=base, notes=notes, used_llm=True)
-    return InterpretedRequest(constraints=constraints, notes=notes, used_llm=True)
+            continue
+        data = trial
+        for key, value in changed:
+            notes.append(InterpretationNote(field=key, message=f"{FIELD_LABELS.get(key, key)}: {value} (iz teksta)"))
+
+    for m in d.get("destination_mapping") or []:
+        notes.append(InterpretationNote(field="destinations", message=f"Mapiranje: {m}"))
+    for a in draft.ambiguities or []:
+        notes.append(InterpretationNote(field="text", message=a, severity="warning"))
+    return InterpretedRequest(constraints=current, notes=notes, used_llm=True)
 
 
 async def interpret_request(

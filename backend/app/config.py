@@ -18,7 +18,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_DIR.parent
 ENV_FILE = REPO_ROOT / ".env"
 
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
 
 def load_env_file() -> bool:
