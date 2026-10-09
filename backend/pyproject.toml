@@ -1,0 +1,55 @@
+[project]
+name = "travelscout-backend"
+version = "0.1.0"
+description = "TravelScout backend: LangGraph multi-agent trip discovery (Wizz Air flights + Booking.com stays + itineraries)."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143",
+    "uvicorn[standard]>=0.54",
+    "langchain>=1.4",
+    "langchain-openai>=1.7",
+    "langgraph>=1.2",
+    "pydantic>=2.14",
+    "pydantic-settings>=2.15",
+    "httpx>=0.28",
+    "python-dotenv>=1.2",
+    "selectolax>=1.0",
+    "tzdata>=2026.1",
+    "playwright>=1.63",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1",
+    "pytest-asyncio>=1.4",
+    "respx>=0.23",
+    "ruff>=0.16",
+    "mypy>=2.4",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "live: hits real external services (OpenAI, Wizz Air, Booking.com, OSM). Run explicitly with -m live.",
+]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S"]
+ignore = ["S101", "S311", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = false
+plugins = ["pydantic.mypy"]

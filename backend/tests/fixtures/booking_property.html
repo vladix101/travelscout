@@ -1,0 +1,26 @@
+<html><head>
+<script type="application/ld+json">{"@context":"http://schema.org","@type":"Hotel","name":"Fixture Guesthouse","aggregateRating":{"bestRating":10,"ratingValue":8.1,"reviewCount":512},"address":{"streetAddress":"Via Esempio 1, Rome"}}</script>
+<script>
+var booking = { env: { b_checkin_date: '2026-11-04', b_checkout_date: '2026-11-08', b_selected_currency: 'EUR', accommodation_type_id: '216' } };
+var rooms = { b_rooms_available_and_soldout: [
+ {"b_id":1001,"b_name":"Double Room","b_blocks":[
+   {"b_block_id":"1001_1","b_max_persons":2,"b_cancellation_type":"non_refundable","b_price_breakdown_simplified":{"b_total_price":[{"b_raw_value_user_currency":300.0}],"b_excluded_charges_amount":40.0,"b_excluded_charges":[{"b_copy":"City tax"}]}},
+   {"b_block_id":"1001_2","b_max_persons":2,"b_cancellation_type":"free_cancellation","b_price_breakdown_simplified":{"b_total_price":[{"b_raw_value_user_currency":320.0}],"b_excluded_charges_amount":40.0,"b_excluded_charges":[{"b_copy":"City tax"}]}}]},
+ {"b_id":1002,"b_name":"Double Room with Shared Bathroom","b_blocks":[
+   {"b_block_id":"1002_1","b_max_persons":2,"b_cancellation_type":"non_refundable","b_price_breakdown_simplified":{"b_total_price":[{"b_raw_value_user_currency":210.0}],"b_excluded_charges_amount":40.0,"b_excluded_charges":[{"b_copy":"City tax"}]}}]},
+ {"b_id":1003,"b_name":"Triple Room","b_blocks":[
+   {"b_block_id":"1003_1","b_max_persons":3,"b_cancellation_type":"non_refundable","b_price_breakdown_simplified":{"b_total_price":[{"b_raw_value_user_currency":380.0}],"b_excluded_charges_amount":40.0,"b_excluded_charges":[]}}]}
+], other: 1 };
+</script></head><body>
+<div data-atlas-latlng="41.9,12.48"></div>
+<table id="hprt-table"><tbody>
+<tr data-block-id="1001_1"><td><span class="hprt-roomtype-icon-link">Double Room</span>
+  <div class="hprt-facilities-block"><span class="hprt-facilities-facility">Air conditioning</span><span class="hprt-facilities-facility">Private bathroom</span></div></td>
+  <td><div data-testid="cancellation-policy">Non-refundable</div><div data-testid="prepayment-policy">Pay online</div></td>
+  <td><select data-room-id="1001"></select></td></tr>
+<tr data-block-id="1001_2"><td><div data-testid="cancellation-policy">Free cancellation before 1 November 2026</div><div data-testid="prepayment-policy">No prepayment needed</div></td><td><select data-room-id="1001"></select></td></tr>
+<tr data-block-id="1002_1"><td><span class="hprt-roomtype-icon-link">Double Room with Shared Bathroom</span>
+  <div class="hprt-facilities-block"><span class="hprt-facilities-facility">Shared bathroom</span></div></td><td><select data-room-id="1002"></select></td></tr>
+<tr data-block-id="1003_1"><td><span class="hprt-roomtype-icon-link">Triple Room</span>
+  <div class="hprt-facilities-block"><span class="hprt-facilities-facility">Private external bathroom</span></div></td><td><select data-room-id="1003"></select></td></tr>
+</tbody></table></body></html>

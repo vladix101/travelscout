@@ -1,0 +1,5 @@
+{"outboundFlights":[
+ {"departureStation":"BEG","arrivalStation":"FCO","departureDate":"2026-11-04T00:00:00","price":{"amount":6889.0,"currencyCode":"RSD"},"priceType":"price","departureDates":["2026-11-04T15:50:00"],"hasMacFlight":false},
+ {"departureStation":"BEG","arrivalStation":"FCO","departureDate":"2026-11-05T00:00:00","price":{"amount":0.0,"currencyCode":"RSD"},"priceType":"checkPrice","departureDates":["2026-11-05T15:50:00"],"hasMacFlight":false},
+ {"departureStation":"BEG","arrivalStation":"FCO","departureDate":"2026-11-06T00:00:00","price":{"amount":11069.0,"currencyCode":"RSD"},"priceType":"price","departureDates":["2026-11-06T15:50:00"],"hasMacFlight":false}
+]}

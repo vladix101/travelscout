@@ -1,0 +1,4 @@
+{"outboundFlights":[
+ {"departureStation":"FCO","arrivalStation":"BEG","departureDate":"2026-11-08T00:00:00","price":{"amount":29.99,"currencyCode":"EUR"},"priceType":"price","departureDates":["2026-11-08T18:10:00"],"hasMacFlight":false},
+ {"departureStation":"FCO","arrivalStation":"BEG","departureDate":"2026-11-09T00:00:00","price":{"amount":45.99,"currencyCode":"EUR"},"priceType":"price","departureDates":["2026-11-09T18:10:00"],"hasMacFlight":false}
+]}

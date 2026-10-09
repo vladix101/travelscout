@@ -1,0 +1,6 @@
+{"cities":[
+ {"iata":"BEG","shortName":"Belgrade","countryName":"Serbia","countryCode":"RS","mac":null,"isFakeStation":false,"latitude":44.8184,"longitude":20.3091,"connections":[{"iata":"FCO","isDirectFlight":true},{"iata":"ROM","isDirectFlight":true},{"iata":"PSA","isDirectFlight":true}]},
+ {"iata":"FCO","shortName":"Rome Fiumicino","countryName":"Italy","countryCode":"IT","mac":"ROM","isFakeStation":false,"latitude":41.8003,"longitude":12.2389,"connections":[{"iata":"BEG","isDirectFlight":true}]},
+ {"iata":"ROM","shortName":"Rome (All Airports)","countryName":"Italy","countryCode":"IT","mac":"ROM","isFakeStation":true,"latitude":41.8,"longitude":12.4,"connections":[]},
+ {"iata":"PSA","shortName":"Pisa (Tuscany)","countryName":"Italy","countryCode":"IT","mac":null,"isFakeStation":false,"latitude":43.6839,"longitude":10.3927,"connections":[]}
+]}
